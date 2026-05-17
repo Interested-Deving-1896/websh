@@ -87,7 +87,7 @@
         "derived": {
           "title": "talks",
           "kind": "directory",
-          "child_count": 2
+          "child_count": 1
         }
       }
     },
@@ -100,7 +100,7 @@
         "derived": {
           "title": "writing",
           "kind": "directory",
-          "child_count": 1
+          "child_count": 2
         }
       }
     },
@@ -113,7 +113,7 @@
         "derived": {
           "title": "ledger",
           "kind": "data",
-          "size_bytes": 7705
+          "size_bytes": 7975
         }
       }
     },
@@ -223,7 +223,7 @@
         "authored": {
           "title": "Evaluating compiler-optimization impacts on zkVM performance",
           "description": "Slide deck — measuring how LLVM optimization passes interact with zkVM proving cost.",
-          "date": "2026-04-20",
+          "date": "2026-04-24",
           "tags": [
             "talk",
             "zk",
@@ -239,61 +239,63 @@
             "width": 960,
             "height": 540
           },
-          "page_count": 33,
+          "page_count": 31,
           "rotation": 0,
-          "size_bytes": 3565336,
-          "content_sha256": "0xee2bbdd5ab9381e403bddf0590ae4aec42330aa1cb2bd2a1b4c9a20832ca4f13"
+          "size_bytes": 3417199,
+          "content_sha256": "0x2652af4104e2138d8b449fe60ff09d0a35217fd8a76fef28478e4219e12583bb"
         }
       }
     },
     {
-      "path": "talks/zk-compilers.md",
+      "path": "writing/zk-proofs-from-a-compiler-perspective-ko.md",
       "metadata": {
         "schema": 1,
         "kind": "page",
         "authored": {
-          "title": "zk compilers, and why they're hard",
-          "description": "Talk outline — what makes zk compilers different from regular compilers.",
-          "date": "2026-04-23",
+          "title": "Zero-Knowledge Proofs, from a Compiler Perspective (Korean)",
+          "description": "프로그램이 relation, constraint, trace, proof가 되는 과정을 컴파일러 관점에서 설명합니다.",
+          "date": "2026-05-15",
           "tags": [
-            "talk",
             "zk",
-            "compilers"
+            "compilers",
+            "zero-knowledge",
+            "systems",
+            "korean"
           ]
         },
         "derived": {
-          "title": "zk-compilers",
+          "title": "zk-proofs-from-a-compiler-perspective-ko",
           "kind": "page",
           "renderer": "markdown_page",
-          "size_bytes": 263,
-          "content_sha256": "0x599963aa4dbb36a0e64ab37ce61146eafcb1a6519a60e6587b12fce094621726",
-          "word_count": 14
+          "size_bytes": 30276,
+          "content_sha256": "0x5fc95fa16939801143a0adcb5733c535ec986933329509ba641a684dadbda261",
+          "word_count": 3081
         }
       }
     },
     {
-      "path": "writing/content-backed-homepage.md",
+      "path": "writing/zk-proofs-from-a-compiler-perspective.md",
       "metadata": {
         "schema": 1,
         "kind": "page",
         "authored": {
-          "title": "content-backed homepage",
-          "description": "Renderer smoke test — markdown, KaTeX, tables, code blocks.",
-          "date": "2026-04-20",
+          "title": "Zero-Knowledge Proofs, from a Compiler Perspective",
+          "description": "How programs become relations, constraints, traces, and proofs.",
+          "date": "2026-05-15",
           "tags": [
-            "notes",
-            "websh",
-            "homepage",
-            "renderer-test"
+            "zk",
+            "compilers",
+            "zero-knowledge",
+            "systems"
           ]
         },
         "derived": {
-          "title": "content-backed-homepage",
+          "title": "zk-proofs-from-a-compiler-perspective",
           "kind": "page",
           "renderer": "markdown_page",
-          "size_bytes": 990,
-          "content_sha256": "0xc2ac889c773a0adafc4e2efc070e6d49ba6fc69049e9563be7dfbfc699b6f7fa",
-          "word_count": 130
+          "size_bytes": 25380,
+          "content_sha256": "0x19146d7604d9eb3ef8f2bcce7e40ea2b6bc7c8bde4532ebf1e825d46c8038f2d",
+          "word_count": 3951
         }
       }
     }

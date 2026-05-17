@@ -166,33 +166,29 @@ fn find_id_attr(block: &str) -> Option<&str> {
 
 fn strip_tags(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
-    let bytes = s.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'<' {
-            while i < bytes.len() && bytes[i] != b'>' {
-                i += 1;
-            }
-            if i < bytes.len() {
-                i += 1;
-            }
-            continue;
+    let mut in_tag = false;
+
+    for ch in s.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' if in_tag => in_tag = false,
+            _ if !in_tag => out.push(ch),
+            _ => {}
         }
-        out.push(bytes[i] as char);
-        i += 1;
     }
+
     out
 }
 
 fn decode_entities(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
-    let bytes = s.as_bytes();
     let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'&'
-            && let Some(end_rel) = s[i..].find(';')
+    while i < s.len() {
+        let rest = &s[i..];
+        if rest.starts_with('&')
+            && let Some(end_rel) = rest.find(';')
         {
-            let entity = &s[i..i + end_rel + 1];
+            let entity = &rest[..end_rel + 1];
             if let Some(decoded) = decode_named_entity(entity) {
                 out.push_str(decoded);
                 i += end_rel + 1;
@@ -204,8 +200,13 @@ fn decode_entities(s: &str) -> String {
                 continue;
             }
         }
-        out.push(bytes[i] as char);
-        i += 1;
+
+        let ch = rest
+            .chars()
+            .next()
+            .expect("non-empty slice while decoding entities");
+        out.push(ch);
+        i += ch.len_utf8();
     }
     out
 }
@@ -766,6 +767,18 @@ mod tests {
         let rendered = render_markdown(md);
         assert_eq!(rendered.outline.len(), 1);
         assert_eq!(rendered.outline[0].text, "With bold and code and em");
+    }
+
+    #[wasm_bindgen_test]
+    fn outline_preserves_utf8_heading_text() {
+        let md = "## Reth 2.0 이후, EVM execution이 다시 중요해졌다.\n\n### 효과와 한계\n";
+        let rendered = render_markdown(md);
+        assert_eq!(rendered.outline.len(), 2);
+        assert_eq!(
+            rendered.outline[0].text,
+            "Reth 2.0 이후, EVM execution이 다시 중요해졌다."
+        );
+        assert_eq!(rendered.outline[1].text, "효과와 한계");
     }
 
     #[wasm_bindgen_test]

@@ -35,67 +35,11 @@
     {
       "height": 2,
       "sort_key": {
-        "date": "2026-04-20",
-        "path": "talks/evaluating-compiler-optimization-impacts-on-zkvm-performance.pdf"
-      },
-      "prev_block_sha256": "0x37146199b89020cf79621e5ba11207a0340fe8524d5ec0766616f8eec8da6260",
-      "block_sha256": "0xa0b9b1df9fd29aa421b0adccaa4fa37b017f0a144c652c01543b0428a51230be",
-      "entry": {
-        "id": "route:/talks/evaluating-compiler-optimization-impacts-on-zkvm-performance.pdf",
-        "route": "/talks/evaluating-compiler-optimization-impacts-on-zkvm-performance.pdf",
-        "path": "talks/evaluating-compiler-optimization-impacts-on-zkvm-performance.pdf",
-        "category": "talks",
-        "content_files": [
-          {
-            "path": "content/talks/evaluating-compiler-optimization-impacts-on-zkvm-performance.meta.json",
-            "sha256": "0x7d406c9dd05f169eb8e3998036d70c45b2061838a7a16220fd30948a58feb207",
-            "bytes": 720
-          },
-          {
-            "path": "content/talks/evaluating-compiler-optimization-impacts-on-zkvm-performance.pdf",
-            "sha256": "0xee2bbdd5ab9381e403bddf0590ae4aec42330aa1cb2bd2a1b4c9a20832ca4f13",
-            "bytes": 3565336
-          }
-        ],
-        "content_sha256": "0x91c906ae82a398655eba6159de2f361458936b7f6ec5c33b4926406f433d0aee"
-      }
-    },
-    {
-      "height": 3,
-      "sort_key": {
-        "date": "2026-04-20",
-        "path": "writing/content-backed-homepage.md"
-      },
-      "prev_block_sha256": "0xa0b9b1df9fd29aa421b0adccaa4fa37b017f0a144c652c01543b0428a51230be",
-      "block_sha256": "0x4e07bb1439fa40df98fa88aecbe6b5f10a3a3540909982f16550aa79cd8fb2fd",
-      "entry": {
-        "id": "route:/writing/content-backed-homepage",
-        "route": "/writing/content-backed-homepage",
-        "path": "writing/content-backed-homepage.md",
-        "category": "writing",
-        "content_files": [
-          {
-            "path": "content/writing/content-backed-homepage.md",
-            "sha256": "0xc2ac889c773a0adafc4e2efc070e6d49ba6fc69049e9563be7dfbfc699b6f7fa",
-            "bytes": 990
-          },
-          {
-            "path": "content/writing/content-backed-homepage.meta.json",
-            "sha256": "0x47f1bfe198739494c4c95b06a728ea482d76ac3b80bd54f7c60449ca5e0e67bf",
-            "bytes": 547
-          }
-        ],
-        "content_sha256": "0x4eb4233c486b34cfee2c743a3bbd07508b8dc67399173a59183acd74063fb55b"
-      }
-    },
-    {
-      "height": 4,
-      "sort_key": {
         "date": "2026-04-22",
         "path": "projects/websh.md"
       },
-      "prev_block_sha256": "0x4e07bb1439fa40df98fa88aecbe6b5f10a3a3540909982f16550aa79cd8fb2fd",
-      "block_sha256": "0x72fb88389989501759903baea5d6f9ce3aeea1254cc69dfee5612b14a9bf8c40",
+      "prev_block_sha256": "0x37146199b89020cf79621e5ba11207a0340fe8524d5ec0766616f8eec8da6260",
+      "block_sha256": "0x5719e2df9ddd4d8c7463d0ed3466fa7a376789d11d9fb8c40256cb3471cdad78",
       "entry": {
         "id": "route:/projects/websh",
         "route": "/projects/websh",
@@ -117,41 +61,41 @@
       }
     },
     {
-      "height": 5,
+      "height": 3,
       "sort_key": {
-        "date": "2026-04-23",
-        "path": "talks/zk-compilers.md"
+        "date": "2026-04-24",
+        "path": "talks/evaluating-compiler-optimization-impacts-on-zkvm-performance.pdf"
       },
-      "prev_block_sha256": "0x72fb88389989501759903baea5d6f9ce3aeea1254cc69dfee5612b14a9bf8c40",
-      "block_sha256": "0xf092ac0b7cf606fcc0717fac20b903b08423245b4e9fd885148e7251659ea9a5",
+      "prev_block_sha256": "0x5719e2df9ddd4d8c7463d0ed3466fa7a376789d11d9fb8c40256cb3471cdad78",
+      "block_sha256": "0x0be86d59609aa02fb36f90ed14522cd15993eed84d20adec0bc459cda6eadf8b",
       "entry": {
-        "id": "route:/talks/zk-compilers",
-        "route": "/talks/zk-compilers",
-        "path": "talks/zk-compilers.md",
+        "id": "route:/talks/evaluating-compiler-optimization-impacts-on-zkvm-performance.pdf",
+        "route": "/talks/evaluating-compiler-optimization-impacts-on-zkvm-performance.pdf",
+        "path": "talks/evaluating-compiler-optimization-impacts-on-zkvm-performance.pdf",
         "category": "talks",
         "content_files": [
           {
-            "path": "content/talks/zk-compilers.md",
-            "sha256": "0x599963aa4dbb36a0e64ab37ce61146eafcb1a6519a60e6587b12fce094621726",
-            "bytes": 263
+            "path": "content/talks/evaluating-compiler-optimization-impacts-on-zkvm-performance.meta.json",
+            "sha256": "0x517e92ba7d51c3671453180de31cf66b241b14b90e06c40fb0d2cd4ea5e35950",
+            "bytes": 720
           },
           {
-            "path": "content/talks/zk-compilers.meta.json",
-            "sha256": "0x01ebeeccfd5ebfc2e8a32ccd480e7bdbcfd00c84062b84220f5f9c39137300e2",
-            "bytes": 533
+            "path": "content/talks/evaluating-compiler-optimization-impacts-on-zkvm-performance.pdf",
+            "sha256": "0x2652af4104e2138d8b449fe60ff09d0a35217fd8a76fef28478e4219e12583bb",
+            "bytes": 3417199
           }
         ],
-        "content_sha256": "0xbaaabe808a15a2e30c885ee4f3f468a2499855da411eac27c0c971a363312f6a"
+        "content_sha256": "0x3fdc68845f3452682901473bb7f89c674412fc0314a0c5adbecab5330642d3c0"
       }
     },
     {
-      "height": 6,
+      "height": 4,
       "sort_key": {
         "date": "2026-04-26",
         "path": "papers/tabula.md"
       },
-      "prev_block_sha256": "0xf092ac0b7cf606fcc0717fac20b903b08423245b4e9fd885148e7251659ea9a5",
-      "block_sha256": "0x10d2e78b50999affe9f08c3186413bd51c72b659cab45a88862a744c0a7d759b",
+      "prev_block_sha256": "0x0be86d59609aa02fb36f90ed14522cd15993eed84d20adec0bc459cda6eadf8b",
+      "block_sha256": "0xb795559d1961d55cb0ee47c7059d102adeedd0a5c100bfc6c7e2e7d04a1f7d2e",
       "entry": {
         "id": "route:/papers/tabula",
         "route": "/papers/tabula",
@@ -173,13 +117,13 @@
       }
     },
     {
-      "height": 7,
+      "height": 5,
       "sort_key": {
         "date": "2026-04-30",
         "path": "now.toml"
       },
-      "prev_block_sha256": "0x10d2e78b50999affe9f08c3186413bd51c72b659cab45a88862a744c0a7d759b",
-      "block_sha256": "0xb957b05a206a59bdaf4ebcde0f84535b0d1553eed3035fab66044717b3d6bc45",
+      "prev_block_sha256": "0xb795559d1961d55cb0ee47c7059d102adeedd0a5c100bfc6c7e2e7d04a1f7d2e",
+      "block_sha256": "0xbefe5bc9195bc30705119f7a82bfe7191512118e3a09f7098c2443ccba59994d",
       "entry": {
         "id": "route:/now.toml",
         "route": "/now.toml",
@@ -199,8 +143,64 @@
         ],
         "content_sha256": "0xc8b5e62707c585993a2be663e42a4f2e0c677b51c6fe8ad6826513d0dd80dbbf"
       }
+    },
+    {
+      "height": 6,
+      "sort_key": {
+        "date": "2026-05-15",
+        "path": "writing/zk-proofs-from-a-compiler-perspective-ko.md"
+      },
+      "prev_block_sha256": "0xbefe5bc9195bc30705119f7a82bfe7191512118e3a09f7098c2443ccba59994d",
+      "block_sha256": "0xee0b7ab253d320ec0d08de2745f114c93b58d9c0e4a484955364714e1fba20e6",
+      "entry": {
+        "id": "route:/writing/zk-proofs-from-a-compiler-perspective-ko",
+        "route": "/writing/zk-proofs-from-a-compiler-perspective-ko",
+        "path": "writing/zk-proofs-from-a-compiler-perspective-ko.md",
+        "category": "writing",
+        "content_files": [
+          {
+            "path": "content/writing/zk-proofs-from-a-compiler-perspective-ko.md",
+            "sha256": "0x5fc95fa16939801143a0adcb5733c535ec986933329509ba641a684dadbda261",
+            "bytes": 30276
+          },
+          {
+            "path": "content/writing/zk-proofs-from-a-compiler-perspective-ko.meta.json",
+            "sha256": "0x7bc408862af5bdb209997bcd5507c8ac4f7a6247ea5d250204474169bd82d85e",
+            "bytes": 672
+          }
+        ],
+        "content_sha256": "0x32f58e6b1e83d30080bba18f524d579cbb09854b3d958246c0f841330ece33cf"
+      }
+    },
+    {
+      "height": 7,
+      "sort_key": {
+        "date": "2026-05-15",
+        "path": "writing/zk-proofs-from-a-compiler-perspective.md"
+      },
+      "prev_block_sha256": "0xee0b7ab253d320ec0d08de2745f114c93b58d9c0e4a484955364714e1fba20e6",
+      "block_sha256": "0x313a41176c9c01885556b1794eb0f308c16f37c20f6c3e8ea428218892903006",
+      "entry": {
+        "id": "route:/writing/zk-proofs-from-a-compiler-perspective",
+        "route": "/writing/zk-proofs-from-a-compiler-perspective",
+        "path": "writing/zk-proofs-from-a-compiler-perspective.md",
+        "category": "writing",
+        "content_files": [
+          {
+            "path": "content/writing/zk-proofs-from-a-compiler-perspective.md",
+            "sha256": "0x19146d7604d9eb3ef8f2bcce7e40ea2b6bc7c8bde4532ebf1e825d46c8038f2d",
+            "bytes": 25380
+          },
+          {
+            "path": "content/writing/zk-proofs-from-a-compiler-perspective.meta.json",
+            "sha256": "0x8d0e3a086ab378b07aac5b8f9f81af73d2bc8b50448c317d3ca8e3c6d0d6cfdd",
+            "bytes": 594
+          }
+        ],
+        "content_sha256": "0x59a1b1f1952b27953cfa99915dad3cfd6754a3dfd3f69e8bd94759bb5fb8d0a4"
+      }
     }
   ],
   "block_count": 7,
-  "chain_head": "0xb957b05a206a59bdaf4ebcde0f84535b0d1553eed3035fab66044717b3d6bc45"
+  "chain_head": "0x313a41176c9c01885556b1794eb0f308c16f37c20f6c3e8ea428218892903006"
 }

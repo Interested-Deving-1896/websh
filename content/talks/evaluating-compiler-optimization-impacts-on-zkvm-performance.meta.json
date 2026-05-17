@@ -4,7 +4,7 @@
   "authored": {
     "title": "Evaluating compiler-optimization impacts on zkVM performance",
     "description": "Slide deck — measuring how LLVM optimization passes interact with zkVM proving cost.",
-    "date": "2026-04-20",
+    "date": "2026-04-24",
     "tags": [
       "talk",
       "zk",
@@ -20,9 +20,9 @@
       "width": 960,
       "height": 540
     },
-    "page_count": 33,
+    "page_count": 31,
     "rotation": 0,
-    "size_bytes": 3565336,
-    "content_sha256": "0xee2bbdd5ab9381e403bddf0590ae4aec42330aa1cb2bd2a1b4c9a20832ca4f13"
+    "size_bytes": 3417199,
+    "content_sha256": "0x2652af4104e2138d8b449fe60ff09d0a35217fd8a76fef28478e4219e12583bb"
   }
 }
