@@ -47,8 +47,8 @@ impl FromStr for Priority {
 #[serde(deny_unknown_fields)]
 pub struct MempoolFields {
     pub status: MempoolStatus,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub priority: Option<Priority>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<String>,
 }

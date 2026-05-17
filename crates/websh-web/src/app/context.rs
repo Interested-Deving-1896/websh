@@ -6,7 +6,7 @@ use std::rc::Rc;
 use futures_util::FutureExt;
 use leptos::prelude::*;
 
-use super::TerminalState;
+use super::{RuntimeServiceError, TerminalState};
 use crate::config::APP_NAME;
 use crate::runtime::content_cache::{ContentTextCache, ContentTextCacheKey};
 use crate::runtime::{self, RuntimeLoad};
@@ -338,19 +338,22 @@ impl AppContext {
         self.runtime_generation.get_value()
     }
 
-    pub fn mark_mount_loading(&self, root: &VirtualPath) -> Result<(RuntimeMount, u64), String> {
+    pub fn mark_mount_loading(
+        &self,
+        root: &VirtualPath,
+    ) -> Result<(RuntimeMount, u64), RuntimeServiceError> {
         let mut marked = None;
         self.mounts.update(|mounts| {
             marked = mounts.mark_loading(root);
         });
-        marked.ok_or_else(|| format!("sync: no runtime mount declared at {}", root.as_str()))
+        marked.ok_or_else(|| RuntimeServiceError::MissingDeclaration { root: root.clone() })
     }
 
     pub(crate) fn mark_mount_failed(
         &self,
         root: &VirtualPath,
         error: impl Into<String>,
-    ) -> Result<(), String> {
+    ) -> Result<(), RuntimeServiceError> {
         let error = error.into();
         let mut marked = false;
         self.mounts.update(|mounts| {
@@ -359,10 +362,7 @@ impl AppContext {
         if marked {
             Ok(())
         } else {
-            Err(format!(
-                "sync: no runtime mount declared at {}",
-                root.as_str()
-            ))
+            Err(RuntimeServiceError::MissingDeclaration { root: root.clone() })
         }
     }
 
@@ -380,7 +380,7 @@ impl AppContext {
         &self,
         generation: u64,
         result: runtime::MountScanResult,
-    ) -> Result<(), String> {
+    ) -> Result<(), RuntimeServiceError> {
         if generation != self.runtime_generation() {
             return Ok(());
         }
@@ -401,11 +401,14 @@ impl AppContext {
                 self.evict_text_cache_mount(&root);
                 let mut global = self.global_fs.get_untracked();
                 if let Err(error) = global.replace_scanned_subtree(root.clone(), &scan) {
-                    let message = format!("mount {}: {error:?}", label);
+                    let message = format!("mount {label}: {error}");
                     self.mounts.update(|mounts| {
                         mounts.mark_failed_if_current(&root, epoch, message.clone());
                     });
-                    return Err(message);
+                    return Err(RuntimeServiceError::ReplaceScannedSubtree {
+                        label,
+                        source: error,
+                    });
                 }
                 let failed_descendants = self
                     .mounts
@@ -425,7 +428,7 @@ impl AppContext {
             Err(error) => {
                 self.evict_text_cache_mount(&root);
                 self.mounts.update(|mounts| {
-                    mounts.mark_failed_if_current(&root, epoch, error);
+                    mounts.mark_failed_if_current(&root, epoch, error.to_string());
                 });
                 Ok(())
             }
@@ -443,10 +446,13 @@ fn content_cache_key_for_path(
         .filter(|root| path.starts_with(root))
         .max_by_key(|root| root.as_str().len())
         .cloned()
-        .ok_or_else(|| ContentReadError::NoBackend(path.to_string()))?;
+        .ok_or_else(|| ContentReadError::NoBackend { path: path.clone() })?;
     let rel_path = path
         .strip_prefix(&mount_root)
-        .ok_or_else(|| ContentReadError::PathOutsideBackendRoot(path.to_string()))?
+        .ok_or_else(|| ContentReadError::PathOutsideBackendRoot {
+            path: path.clone(),
+            root: mount_root.clone(),
+        })?
         .to_string();
     Ok(ContentTextCacheKey {
         generation,
@@ -513,6 +519,7 @@ mod tests {
     use std::rc::Rc;
     use wasm_bindgen_test::*;
     use websh_core::domain::{EntryExtensions, Fields, NodeKind, NodeMetadata, SCHEMA_VERSION};
+    use websh_core::filesystem::MountError;
     use websh_core::ports::{
         CommitOutcome, CommitRequest, LocalBoxFuture, ScannedSubtree, StorageBackend,
         StorageBackendRef, StorageError, StorageResult,
@@ -561,7 +568,11 @@ mod tests {
             &'a self,
             _request: &'a CommitRequest,
         ) -> LocalBoxFuture<'a, StorageResult<CommitOutcome>> {
-            Box::pin(async { Err(StorageError::BadRequest("unused".to_string())) })
+            Box::pin(async {
+                Err(StorageError::InvalidRequest {
+                    message: "unused".to_string(),
+                })
+            })
         }
     }
 
@@ -601,6 +612,7 @@ mod tests {
         NodeMetadata {
             schema: SCHEMA_VERSION,
             kind: NodeKind::Data,
+            bundle: None,
             authored: Fields::default(),
             derived: Fields::default(),
         }
@@ -765,7 +777,13 @@ mod tests {
             let error = ctx
                 .apply_mount_scan_result(ctx.runtime_generation(), result)
                 .expect_err("mount apply should fail");
-            assert!(error.contains("MountPointIsFile"));
+            assert!(matches!(
+                error,
+                RuntimeServiceError::ReplaceScannedSubtree {
+                    source: MountError::MountPointIsFile { .. },
+                    ..
+                }
+            ));
             assert!(matches!(
                 ctx.mount_status_for(&root),
                 Some(runtime::MountLoadStatus::Failed { .. })

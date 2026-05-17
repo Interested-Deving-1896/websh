@@ -1,10 +1,11 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
+use anyhow::Context;
 use serde::Deserialize;
 
+use websh_core::domain::MempoolStatus;
 use websh_core::domain::{ContentManifestDocument, ContentManifestEntry};
-use websh_core::domain::{MempoolStatus, NodeKind};
 
 use crate::CliResult;
 use crate::infra::gh::{GhApiOutput, gh_capture, gh_capture_status, require_gh};
@@ -43,12 +44,12 @@ pub(crate) fn list_entries(root: &Path) -> CliResult<MempoolListOutcome> {
         }
     };
 
-    let manifest: ContentManifestDocument = serde_json::from_str(&manifest_body)
-        .map_err(|e| format!("failed to parse mempool manifest: {e}"))?;
+    let manifest: ContentManifestDocument =
+        serde_json::from_str(&manifest_body).context("parse mempool manifest")?;
     let file_entries: Vec<&ContentManifestEntry> = manifest
         .entries
         .iter()
-        .filter(|e| !matches!(e.metadata.kind, NodeKind::Directory))
+        .filter(|e| !e.metadata.kind.is_directory_like())
         .collect();
     let entries = file_entries
         .iter()
@@ -146,8 +147,7 @@ fn drift_warnings(
         mount.repo, mount.branch
     );
     let body = gh_capture(["api", url.as_str()])?;
-    let resp: TreeResp = serde_json::from_str(&body)
-        .map_err(|e| format!("failed to parse git/trees response: {e}"))?;
+    let resp: TreeResp = serde_json::from_str(&body).context("parse git/trees response")?;
 
     let prefix = mount.root_prefix.trim_matches('/');
     let strip = |full: &str| -> Option<String> {
@@ -209,6 +209,7 @@ mod tests {
             metadata: NodeMetadata {
                 schema: SCHEMA_VERSION,
                 kind,
+                bundle: None,
                 authored: Fields {
                     date: Some("2026-05-05".to_string()),
                     ..Fields::default()

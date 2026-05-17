@@ -97,10 +97,10 @@ fn ledger_validation_rejects_malformed_sort_key_dates() {
     ] {
         let ledger = ContentLedger::new(vec![input(Some(date), "writing/bad-date.md")]).unwrap();
         assert!(
-            ledger
-                .validate()
-                .unwrap_err()
-                .contains("ledger sort_key date is invalid"),
+            matches!(
+                ledger.validate().unwrap_err(),
+                LedgerValidationError::InvalidSortKeyDate { .. }
+            ),
             "date {date:?} should fail validation"
         );
     }
@@ -163,12 +163,10 @@ fn ledger_validation_rejects_duplicate_routes_ids_and_paths() {
         ),
     ])
     .unwrap();
-    assert!(
-        ledger
-            .validate()
-            .unwrap_err()
-            .contains("duplicate ledger route")
-    );
+    assert!(matches!(
+        ledger.validate().unwrap_err(),
+        LedgerValidationError::DuplicateRoute { .. }
+    ));
 
     let mut duplicate_id = entry("projects/b.md");
     duplicate_id.id = "route:/projects/a.md".to_string();
@@ -180,12 +178,10 @@ fn ledger_validation_rejects_duplicate_routes_ids_and_paths() {
         ),
     ])
     .unwrap();
-    assert!(
-        ledger
-            .validate()
-            .unwrap_err()
-            .contains("duplicate ledger id")
-    );
+    assert!(matches!(
+        ledger.validate().unwrap_err(),
+        LedgerValidationError::DuplicateId { .. }
+    ));
 
     let mut duplicate_path = entry("projects/b.md");
     duplicate_path.path = "projects/a.md".to_string();
@@ -197,12 +193,10 @@ fn ledger_validation_rejects_duplicate_routes_ids_and_paths() {
         ),
     ])
     .unwrap();
-    assert!(
-        ledger
-            .validate()
-            .unwrap_err()
-            .contains("duplicate ledger path")
-    );
+    assert!(matches!(
+        ledger.validate().unwrap_err(),
+        LedgerValidationError::DuplicatePath { .. }
+    ));
 }
 
 #[test]
@@ -214,12 +208,10 @@ fn ledger_validation_rejects_bad_id_route_and_path() {
         bad_id,
     )])
     .unwrap();
-    assert!(
-        ledger
-            .validate()
-            .unwrap_err()
-            .contains("ledger id mismatch")
-    );
+    assert!(matches!(
+        ledger.validate().unwrap_err(),
+        LedgerValidationError::IdMismatch { .. }
+    ));
 
     let mut bad_route = entry("writing/hello.md");
     bad_route.route = "writing/hello.md".to_string();
@@ -228,7 +220,10 @@ fn ledger_validation_rejects_bad_id_route_and_path() {
         bad_route,
     )])
     .unwrap();
-    assert!(ledger.validate().unwrap_err().contains("absolute"));
+    assert!(matches!(
+        ledger.validate().unwrap_err(),
+        LedgerValidationError::InvalidRoute { .. }
+    ));
 
     let mut bad_path = entry("writing/hello.md");
     bad_path.path = "/writing/hello.md".to_string();
@@ -237,12 +232,10 @@ fn ledger_validation_rejects_bad_id_route_and_path() {
         bad_path,
     )])
     .unwrap();
-    assert!(
-        ledger
-            .validate()
-            .unwrap_err()
-            .contains("content-root-relative")
-    );
+    assert!(matches!(
+        ledger.validate().unwrap_err(),
+        LedgerValidationError::InvalidContentPath { .. }
+    ));
 }
 
 #[test]
@@ -264,7 +257,10 @@ fn ledger_validation_rejects_missing_primary_and_unsorted_content_files() {
         missing_primary,
     )])
     .unwrap();
-    assert!(ledger.validate().unwrap_err().contains("missing primary"));
+    assert!(matches!(
+        ledger.validate().unwrap_err(),
+        LedgerValidationError::MissingPrimaryContentFile { .. }
+    ));
 
     let unsorted = ContentLedgerEntry::new(
         "route:/talks/a.pdf".to_string(),
@@ -290,7 +286,10 @@ fn ledger_validation_rejects_missing_primary_and_unsorted_content_files() {
         unsorted,
     )])
     .unwrap();
-    assert!(ledger.validate().unwrap_err().contains("content files"));
+    assert!(matches!(
+        ledger.validate().unwrap_err(),
+        LedgerValidationError::ContentFilesNotSorted { .. }
+    ));
 }
 
 #[test]
@@ -301,7 +300,10 @@ fn ledger_validation_rejects_tampering() {
     ])
     .unwrap();
     ledger.blocks[0].entry.content_files[0].sha256 = sha('b');
-    assert!(ledger.validate().unwrap_err().contains("content hash"));
+    assert!(matches!(
+        ledger.validate().unwrap_err(),
+        LedgerValidationError::ContentHashMismatch { .. }
+    ));
 
     let mut ledger = ContentLedger::new(vec![
         input(Some("2026-01-01"), "writing/a.md"),
@@ -309,11 +311,17 @@ fn ledger_validation_rejects_tampering() {
     ])
     .unwrap();
     ledger.blocks[1].prev_block_sha256 = sha('c');
-    assert!(ledger.validate().unwrap_err().contains("prev_block_sha256"));
+    assert!(matches!(
+        ledger.validate().unwrap_err(),
+        LedgerValidationError::PrevBlockHashMismatch { .. }
+    ));
 
     let mut ledger = ContentLedger::new(vec![input(None, "writing/a.md")]).unwrap();
     ledger.blocks[0].block_sha256 = sha('d');
-    assert!(ledger.validate().unwrap_err().contains("block hash"));
+    assert!(matches!(
+        ledger.validate().unwrap_err(),
+        LedgerValidationError::BlockHashMismatch { .. }
+    ));
 
     let mut ledger = ContentLedger::new(vec![
         input(Some("2026-01-01"), "writing/a.md"),
@@ -325,19 +333,31 @@ fn ledger_validation_rejects_tampering() {
 
     let mut ledger = ContentLedger::new(vec![input(None, "writing/a.md")]).unwrap();
     ledger.blocks[0].height = 2;
-    assert!(ledger.validate().unwrap_err().contains("height"));
+    assert!(matches!(
+        ledger.validate().unwrap_err(),
+        LedgerValidationError::BlockHeightMismatch { .. }
+    ));
 
     let mut ledger = ContentLedger::new(vec![input(None, "writing/a.md")]).unwrap();
     ledger.blocks[0].entry.category = ContentLedgerCategory::Projects;
-    assert!(ledger.validate().unwrap_err().contains("category"));
+    assert!(matches!(
+        ledger.validate().unwrap_err(),
+        LedgerValidationError::CategoryMismatch { .. }
+    ));
 
     let mut ledger = ContentLedger::new(vec![input(None, "writing/a.md")]).unwrap();
     ledger.block_count = 2;
-    assert!(ledger.validate().unwrap_err().contains("block_count"));
+    assert!(matches!(
+        ledger.validate().unwrap_err(),
+        LedgerValidationError::BlockCountMismatch { .. }
+    ));
 
     let mut ledger = ContentLedger::new(vec![input(None, "writing/a.md")]).unwrap();
     ledger.chain_head = sha('e');
-    assert!(ledger.validate().unwrap_err().contains("chain_head"));
+    assert!(matches!(
+        ledger.validate().unwrap_err(),
+        LedgerValidationError::ChainHeadMismatch
+    ));
 }
 
 #[test]

@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use anyhow::{anyhow, bail};
 use websh_core::attestation::artifact::{Attestation, Subject, message_sha256};
 use websh_core::attestation::ledger::ContentLedger;
 use websh_core::crypto::ack::short_hash;
@@ -17,13 +18,13 @@ pub(crate) fn verify(root: &Path, route: Option<String>) -> CliResult {
     let artifact = read_artifact(root)?;
     artifact.validate_header()?;
     if artifact.subjects.is_empty() {
-        return Err("no attestation subjects".into());
+        bail!("no attestation subjects");
     }
 
     if let Some(route) = route {
         let subject = artifact
             .subject_for_route(&route)
-            .ok_or_else(|| format!("attestation subject not found for route {route}"))?;
+            .ok_or_else(|| anyhow!("attestation subject not found for route {route}"))?;
         verify_subject(root, subject)?;
         return Ok(());
     }
@@ -46,7 +47,7 @@ fn verify_subject(root: &Path, subject: &Subject) -> CliResult {
             .collect::<Vec<_>>(),
     )?;
     if rebuilt != subject.content_files() {
-        return Err(format!("content file metadata mismatch for {}", subject.id()).into());
+        bail!("content file metadata mismatch for {}", subject.id());
     }
     let content_sha256 = subject.content_sha256()?;
 
@@ -54,7 +55,7 @@ fn verify_subject(root: &Path, subject: &Subject) -> CliResult {
         Subject::Homepage(hp) => {
             let ack = read_ack(root)?;
             if ack.combined_root != hp.ack_combined_root {
-                return Err(format!("ACK root mismatch for {}", subject.id()).into());
+                bail!("ACK root mismatch for {}", subject.id());
             }
         }
         Subject::Ledger(ls) => {
@@ -62,10 +63,10 @@ fn verify_subject(root: &Path, subject: &Subject) -> CliResult {
             let ledger: ContentLedger = read_json(&ledger_path)?;
             ledger.validate()?;
             if ledger.chain_head != ls.chain_head {
-                return Err(format!("chain_head mismatch for {}", subject.id()).into());
+                bail!("chain_head mismatch for {}", subject.id());
             }
         }
-        Subject::Document(_) | Subject::Page(_) => {}
+        Subject::Document(_) | Subject::Page(_) | Subject::Bundle(_) => {}
     }
 
     let message = subject.canonical_message()?;
@@ -77,10 +78,10 @@ fn verify_subject(root: &Path, subject: &Subject) -> CliResult {
 
     for attestation in subject.attestations() {
         if attestation.message_sha256() != message_hash {
-            return Err(format!("attestation message hash mismatch for {}", subject.id()).into());
+            bail!("attestation message hash mismatch for {}", subject.id());
         }
         if !attestation.verified() {
-            return Err(format!("stored attestation is not verified for {}", subject.id()).into());
+            bail!("stored attestation is not verified for {}", subject.id());
         }
 
         match attestation {
@@ -93,7 +94,7 @@ fn verify_subject(root: &Path, subject: &Subject) -> CliResult {
                 let verified_fingerprint =
                     verify_pgp_signature(root, Path::new(key_path), signature, &message)?;
                 if normalize_fingerprint(fingerprint) != verified_fingerprint {
-                    return Err(format!("PGP fingerprint mismatch for {}", subject.id()).into());
+                    bail!("PGP fingerprint mismatch for {}", subject.id());
                 }
                 println!(
                     "{}: pgp ok {}",
@@ -109,18 +110,14 @@ fn verify_subject(root: &Path, subject: &Subject) -> CliResult {
                 ..
             } => {
                 if scheme != "eip191-personal-sign" {
-                    return Err(format!("unsupported Ethereum scheme {scheme}").into());
+                    bail!("unsupported Ethereum scheme {scheme}");
                 }
                 let verification = verify_personal_sign(address, &message, signature)?;
                 if !verification
                     .recovered_address
                     .eq_ignore_ascii_case(recovered_address)
                 {
-                    return Err(format!(
-                        "Ethereum recovered address mismatch for {}",
-                        subject.id()
-                    )
-                    .into());
+                    bail!("Ethereum recovered address mismatch for {}", subject.id());
                 }
                 println!(
                     "{}: ethereum ok {}",

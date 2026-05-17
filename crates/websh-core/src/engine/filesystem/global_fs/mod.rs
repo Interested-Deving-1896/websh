@@ -1,5 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use thiserror::Error;
+
 use crate::domain::{DirEntry, FsEntry, NodeMetadata, RouteIndexEntry, VirtualPath};
 
 use super::intent::{RenderIntent, build_render_intent};
@@ -14,19 +16,27 @@ mod query;
 mod tests;
 
 /// Error returned when assembling a global tree from mounted subtrees.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum MountError {
+    #[error("mount root must be a directory")]
     RootMustBeDirectory,
+    #[error("mount parent is a file: {path}")]
     ParentIsFile { path: VirtualPath },
+    #[error("mount point is a file: {path}")]
     MountPointIsFile { path: VirtualPath },
+    #[error("mount point is already occupied: {path}")]
     MountPointOccupied { path: VirtualPath },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum FsMutationError {
+    #[error("filesystem root must be a directory")]
     RootMustBeDirectory,
+    #[error("parent is a file: {path}")]
     ParentIsFile { path: VirtualPath },
+    #[error("target is a directory: {path}")]
     TargetIsDirectory { path: VirtualPath },
+    #[error("target is missing: {path}")]
     TargetMissing { path: VirtualPath },
 }
 
@@ -107,6 +117,6 @@ impl FsEngine for GlobalFs {
     }
 
     fn build_render_intent(&self, resolution: &RouteResolution) -> Option<RenderIntent> {
-        build_render_intent(resolution)
+        build_render_intent(self, resolution)
     }
 }

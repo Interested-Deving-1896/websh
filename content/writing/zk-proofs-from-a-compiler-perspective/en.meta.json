@@ -3,21 +3,21 @@
   "kind": "page",
   "authored": {
     "title": "Zero-Knowledge Proofs, from a Compiler Perspective",
+    "language": "en",
     "description": "How programs become relations, constraints, traces, and proofs.",
     "date": "2026-05-15",
     "tags": [
       "zk",
       "compilers",
-      "zero-knowledge",
       "systems"
     ]
   },
   "derived": {
-    "title": "zk-proofs-from-a-compiler-perspective",
+    "title": "en",
     "kind": "page",
     "renderer": "markdown_page",
-    "size_bytes": 25380,
-    "content_sha256": "0x19146d7604d9eb3ef8f2bcce7e40ea2b6bc7c8bde4532ebf1e825d46c8038f2d",
+    "size_bytes": 25377,
+    "content_sha256": "0xabdfb58f0df265ac3ac0c3b5be14e6c07d722e010dd3cfeea27fe151c4923c13",
     "word_count": 3951
   }
 }

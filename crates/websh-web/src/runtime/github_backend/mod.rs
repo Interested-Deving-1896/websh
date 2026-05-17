@@ -11,12 +11,36 @@ mod client;
 mod graphql;
 mod path;
 
-pub use client::GitHubBackend;
+pub use client::{GitHubBackend, GitHubBackendConfigError};
 
-use path::normalize_repo_prefix;
+use path::{RepoPathError, normalize_repo_prefix};
 
 type DeclaredBackend = (RuntimeMount, StorageBackendRef);
 const RAW_GITHUB_GATEWAY: &str = "https://raw.githubusercontent.com";
+
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum GitHubBackendDeclarationError {
+    #[error("github mount {mount_at} is missing repo")]
+    MissingRepo { mount_at: String },
+    #[error("invalid mount_at: {mount_at}")]
+    InvalidMountAt { mount_at: String },
+    #[error("noncanonical mount_at: {mount_at}")]
+    NoncanonicalMountAt { mount_at: String },
+    #[error("invalid root for {mount_at}: {source}")]
+    InvalidRoot {
+        mount_at: String,
+        source: RepoPathError,
+    },
+    #[error(
+        "unsupported gateway for {mount_at}: `{gateway}` is not allowed by the browser runtime; allowed gateways are `self` and `https://raw.githubusercontent.com`"
+    )]
+    UnsupportedGateway { mount_at: String, gateway: String },
+    #[error("invalid github backend {mount_at}: {source}")]
+    InvalidBackend {
+        mount_at: String,
+        source: GitHubBackendConfigError,
+    },
+}
 
 pub fn build_backend_for_bootstrap_site(source: &BootstrapSiteSource) -> StorageBackendRef {
     let prefix = source.content_root.trim_matches('/').to_string();
@@ -38,27 +62,40 @@ pub fn build_backend_for_bootstrap_site(source: &BootstrapSiteSource) -> Storage
 
 pub fn build_backend_for_declaration(
     declaration: &MountDeclaration,
-) -> Result<Option<DeclaredBackend>, String> {
+) -> Result<Option<DeclaredBackend>, GitHubBackendDeclarationError> {
     match declaration.backend.as_str() {
         "github" => {
-            let repo = declaration
-                .repo
-                .clone()
-                .ok_or_else(|| format!("github mount {} is missing repo", declaration.mount_at))?;
+            let repo = declaration.repo.clone().ok_or_else(|| {
+                GitHubBackendDeclarationError::MissingRepo {
+                    mount_at: declaration.mount_at.clone(),
+                }
+            })?;
             let branch = declaration
                 .branch
                 .clone()
                 .unwrap_or_else(|| "main".to_string());
-            let mount_root = VirtualPath::from_absolute(declaration.mount_at.clone())
-                .map_err(|_| format!("invalid mount_at: {}", declaration.mount_at))?;
+            let mount_root =
+                VirtualPath::from_absolute(declaration.mount_at.clone()).map_err(|_| {
+                    GitHubBackendDeclarationError::InvalidMountAt {
+                        mount_at: declaration.mount_at.clone(),
+                    }
+                })?;
             if !is_canonical_mount_root(&mount_root) {
-                return Err(format!("noncanonical mount_at: {}", declaration.mount_at));
+                return Err(GitHubBackendDeclarationError::NoncanonicalMountAt {
+                    mount_at: declaration.mount_at.clone(),
+                });
             }
             let prefix = normalize_repo_prefix(&declaration.root.clone().unwrap_or_default())
-                .map_err(|error| format!("invalid root for {}: {error}", declaration.mount_at))?;
+                .map_err(|source| GitHubBackendDeclarationError::InvalidRoot {
+                    mount_at: declaration.mount_at.clone(),
+                    source,
+                })?;
             let gateway = declaration.gateway.as_deref().unwrap_or(RAW_GITHUB_GATEWAY);
-            let gateway = normalize_allowed_browser_gateway(gateway).map_err(|error| {
-                format!("unsupported gateway for {}: {error}", declaration.mount_at)
+            let gateway = normalize_allowed_browser_gateway(gateway).ok_or_else(|| {
+                GitHubBackendDeclarationError::UnsupportedGateway {
+                    mount_at: declaration.mount_at.clone(),
+                    gateway: normalized_gateway_for_error(gateway),
+                }
             })?;
             let label = declaration.name.clone().unwrap_or_else(|| {
                 mount_root
@@ -74,10 +111,12 @@ pub fn build_backend_for_declaration(
                 declaration.writable,
             );
 
-            let backend =
-                GitHubBackend::new(repo, branch, mount_root, prefix, gateway).map_err(|error| {
-                    format!("invalid github backend {}: {error}", declaration.mount_at)
-                })?;
+            let backend = GitHubBackend::new(repo, branch, mount_root, prefix, gateway).map_err(
+                |source| GitHubBackendDeclarationError::InvalidBackend {
+                    mount_at: declaration.mount_at.clone(),
+                    source,
+                },
+            )?;
 
             Ok(Some((mount, Rc::new(backend))))
         }
@@ -85,14 +124,16 @@ pub fn build_backend_for_declaration(
     }
 }
 
-fn normalize_allowed_browser_gateway(gateway: &str) -> Result<&'static str, String> {
+fn normalize_allowed_browser_gateway(gateway: &str) -> Option<&'static str> {
     match gateway.trim_end_matches('/') {
-        "self" => Ok("self"),
-        RAW_GITHUB_GATEWAY => Ok(RAW_GITHUB_GATEWAY),
-        other => Err(format!(
-            "`{other}` is not allowed by the browser runtime; allowed gateways are `self` and `{RAW_GITHUB_GATEWAY}`"
-        )),
+        "self" => Some("self"),
+        RAW_GITHUB_GATEWAY => Some(RAW_GITHUB_GATEWAY),
+        _ => None,
     }
+}
+
+fn normalized_gateway_for_error(gateway: &str) -> String {
+    gateway.trim_end_matches('/').to_string()
 }
 
 fn is_canonical_mount_root(path: &VirtualPath) -> bool {
@@ -184,7 +225,12 @@ mod tests {
             Err(error) => error,
             Ok(_) => panic!("unsupported gateway must be rejected"),
         };
-        assert!(error.contains("unsupported gateway for /db"));
-        assert!(error.contains("allowed gateways"));
+        assert!(matches!(
+            error,
+            GitHubBackendDeclarationError::UnsupportedGateway {
+                mount_at,
+                gateway,
+            } if mount_at == "/db" && gateway == "https://example.com/raw"
+        ));
     }
 }

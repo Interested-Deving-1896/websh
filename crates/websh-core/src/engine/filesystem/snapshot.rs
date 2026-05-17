@@ -228,6 +228,9 @@ fn path_is_excluded(path: &VirtualPath, excluded_roots: &[VirtualPath]) -> bool 
 }
 
 pub(super) fn has_manifest_metadata(path: &str, meta: &NodeMetadata) -> bool {
+    if meta.is_bundle() || meta.bundle.is_some() {
+        return true;
+    }
     if meta.description().is_some()
         || meta.icon().is_some()
         || meta.thumbnail().is_some()

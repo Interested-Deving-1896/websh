@@ -24,9 +24,16 @@ pub const WALLET_TIMEOUT_MS: i32 = 2000;
 /// Prefix for user environment variables in localStorage.
 pub const USER_VAR_PREFIX: &str = "user.";
 
+/// User environment variable used as content language preference.
+pub const LANG_ENV_KEY: &str = "LANG";
+
+/// Fallback language when browser preference is unavailable or invalid.
+pub const DEFAULT_LANG: &str = "en";
+
 /// Default user variables initialized on first visit.
-/// THEME is omitted: the theme system writes `user.THEME` directly.
-pub const DEFAULT_USER_VARS: &[(&str, &str)] = &[("LANG", "en"), ("EDITOR", "vim")];
+/// `LANG` is initialized from the browser language separately. `THEME` is
+/// omitted: the theme system writes `user.THEME` directly.
+pub const DEFAULT_USER_VARS: &[(&str, &str)] = &[("EDITOR", "vim")];
 
 /// Maximum number of terminal output lines to keep in history.
 pub const MAX_TERMINAL_HISTORY: usize = 1000;

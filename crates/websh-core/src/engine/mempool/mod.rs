@@ -16,8 +16,8 @@ pub use categories::LEDGER_CATEGORIES;
 pub use form::{ComposeError, ComposeForm, form_to_payload, validate_form};
 pub use manifest_entry::{MempoolManifestState, build_mempool_manifest_state};
 pub use parse::{
-    RawMempoolMeta, category_for_mempool_path, parse_mempool_frontmatter, strip_frontmatter_block,
-    transform_mempool_frontmatter,
+    MempoolFrontmatterError, RawMempoolMeta, category_for_mempool_path, parse_mempool_frontmatter,
+    strip_frontmatter_block, transform_mempool_frontmatter,
 };
-pub use path::{derive_new_path, mempool_root, placeholder_frontmatter};
+pub use path::{MempoolPathError, derive_new_path, mempool_root, placeholder_frontmatter};
 pub use serialize::{ComposePayload, serialize_mempool_file, slug_from_title};

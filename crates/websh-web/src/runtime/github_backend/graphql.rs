@@ -13,7 +13,9 @@ use serde::Serialize;
 use websh_core::domain::VirtualPath;
 use websh_core::ports::CommitDelta;
 
-use super::path::{normalize_repo_prefix, prefixed_repo_path, validate_repo_relative_path};
+use super::path::{
+    RepoPathError, normalize_repo_prefix, prefixed_repo_path, validate_repo_relative_path,
+};
 
 #[derive(Debug, Serialize)]
 pub struct CreateCommitInput {
@@ -57,6 +59,21 @@ pub struct FileDeletion {
     pub path: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum GraphQLOperationBuildError {
+    #[error(transparent)]
+    RepoPath(#[from] RepoPathError),
+    #[error("staged path {path} is outside mount root {mount_root}")]
+    StagedPathOutsideMount {
+        path: VirtualPath,
+        mount_root: VirtualPath,
+    },
+    #[error("duplicate addition path: {path}")]
+    DuplicateAddition { path: String },
+    #[error("fileChanges has both addition and deletion for {path}")]
+    AddDeleteCollision { path: String },
+}
+
 /// Build the fileChanges payload from a prepared backend-neutral commit delta.
 ///
 /// `mount_root` is stripped from canonical filesystem paths before emission,
@@ -66,7 +83,7 @@ pub fn build_file_changes(
     mount_root: &VirtualPath,
     repo_prefix: &str,
     serialized_manifest: Option<(&str, &str)>, // (repo_path, body_bytes_utf8)
-) -> Result<FileChanges, String> {
+) -> Result<FileChanges, GraphQLOperationBuildError> {
     let mut fc = FileChanges::default();
     let repo_prefix = normalize_repo_prefix(repo_prefix)?;
 
@@ -102,17 +119,19 @@ pub fn build_file_changes(
     Ok(fc)
 }
 
-fn reject_duplicate_additions(fc: &FileChanges) -> Result<(), String> {
+fn reject_duplicate_additions(fc: &FileChanges) -> Result<(), GraphQLOperationBuildError> {
     let mut seen = BTreeSet::new();
     for addition in &fc.additions {
         if !seen.insert(addition.path.as_str()) {
-            return Err(format!("duplicate addition path: {}", addition.path));
+            return Err(GraphQLOperationBuildError::DuplicateAddition {
+                path: addition.path.clone(),
+            });
         }
     }
     Ok(())
 }
 
-fn reject_add_delete_collisions(fc: &FileChanges) -> Result<(), String> {
+fn reject_add_delete_collisions(fc: &FileChanges) -> Result<(), GraphQLOperationBuildError> {
     let additions = fc
         .additions
         .iter()
@@ -123,10 +142,9 @@ fn reject_add_delete_collisions(fc: &FileChanges) -> Result<(), String> {
         .iter()
         .find(|deletion| additions.contains(deletion.path.as_str()))
     {
-        return Err(format!(
-            "fileChanges has both addition and deletion for {}",
-            deletion.path
-        ));
+        return Err(GraphQLOperationBuildError::AddDeleteCollision {
+            path: deletion.path.clone(),
+        });
     }
     Ok(())
 }
@@ -135,15 +153,14 @@ fn join_repo_path(
     mount_root: &VirtualPath,
     prefix: &str,
     path: &VirtualPath,
-) -> Result<String, String> {
+) -> Result<String, GraphQLOperationBuildError> {
     let tail = path.strip_prefix(mount_root).ok_or_else(|| {
-        format!(
-            "staged path {} is outside mount root {}",
-            path.as_str(),
-            mount_root.as_str()
-        )
+        GraphQLOperationBuildError::StagedPathOutsideMount {
+            path: path.clone(),
+            mount_root: mount_root.clone(),
+        }
     })?;
-    prefixed_repo_path(prefix, tail)
+    Ok(prefixed_repo_path(prefix, tail)?)
 }
 
 #[cfg(all(test, target_arch = "wasm32"))]
@@ -228,7 +245,11 @@ mod tests {
             Some(("~/manifest.json", "{}")),
         )
         .unwrap_err();
-        assert!(err.contains("duplicate addition path"));
+        assert!(matches!(
+            err,
+            GraphQLOperationBuildError::DuplicateAddition { path }
+                if path == "~/manifest.json"
+        ));
     }
 
     #[wasm_bindgen_test]
@@ -256,7 +277,11 @@ mod tests {
             ..Default::default()
         };
         let err = build_file_changes(&delta, &p("/work"), "content", None).unwrap_err();
-        assert!(err.contains("outside mount root"));
+        assert!(matches!(
+            err,
+            GraphQLOperationBuildError::StagedPathOutsideMount { path, mount_root }
+                if path == p("/other/note.md") && mount_root == p("/work")
+        ));
     }
 
     #[wasm_bindgen_test]
@@ -298,6 +323,10 @@ mod tests {
         };
         let err =
             build_file_changes(&delta, &VirtualPath::root(), "content/../x", None).unwrap_err();
-        assert!(err.contains("traversal"));
+        assert!(matches!(
+            err,
+            GraphQLOperationBuildError::RepoPath(RepoPathError::Traversal { path })
+                if path == "content/../x"
+        ));
     }
 }

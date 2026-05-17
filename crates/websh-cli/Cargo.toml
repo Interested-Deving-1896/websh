@@ -28,6 +28,8 @@ serde_norway = { workspace = true }
 lopdf = { workspace = true }
 imagesize = { workspace = true }
 regex = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 websh-core = { workspace = true, features = ["mock", "eth-verify"] }

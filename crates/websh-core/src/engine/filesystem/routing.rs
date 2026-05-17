@@ -46,6 +46,7 @@ pub enum RouteSurface {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ResolvedKind {
     Directory,
+    Bundle,
     Page,
     Document,
     App,
@@ -195,8 +196,9 @@ pub fn canonicalize_user_path(cwd: &VirtualPath, raw: &str) -> Option<VirtualPat
 
 /// Resolve routes in priority order:
 /// 1. reserved shell route
-/// 2. derived index
-/// 3. convention fallback
+/// 2. bundle variant routes
+/// 3. derived index
+/// 4. convention fallback
 pub fn resolve_route(fs: &GlobalFs, request: &RouteRequest) -> Option<RouteResolution> {
     let path = normalize_request_path(&request.url_path);
 
@@ -204,7 +206,9 @@ pub fn resolve_route(fs: &GlobalFs, request: &RouteRequest) -> Option<RouteResol
         return resolve_reserved_route(fs, &path);
     }
 
-    resolve_index_route(fs, &path).or_else(|| resolve_convention_route(fs, &path))
+    resolve_bundle_variant_route(fs, &path)
+        .or_else(|| resolve_index_route(fs, &path))
+        .or_else(|| resolve_convention_route(fs, &path))
 }
 
 pub fn normalize_request_path(path: &str) -> String {
@@ -300,6 +304,7 @@ fn resolved_kind_from_index(
             NodeKind::Redirect => ResolvedKind::Redirect,
             NodeKind::Data => classify_candidate(fs, node_path).unwrap_or(ResolvedKind::Document),
             NodeKind::Directory => ResolvedKind::Directory,
+            NodeKind::Bundle => ResolvedKind::Bundle,
         };
     }
 
@@ -322,6 +327,9 @@ fn resolved_kind_from_index(
 fn classify_candidate(fs: &GlobalFs, candidate: &VirtualPath) -> Option<ResolvedKind> {
     let entry = fs.get_entry(candidate)?;
     if entry.is_directory() {
+        if entry.meta().is_bundle() {
+            return Some(ResolvedKind::Bundle);
+        }
         return Some(ResolvedKind::Directory);
     }
 
@@ -337,6 +345,48 @@ fn classify_candidate(fs: &GlobalFs, candidate: &VirtualPath) -> Option<Resolved
         "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" => ResolvedKind::Asset,
         "pdf" => ResolvedKind::Document,
         _ => ResolvedKind::Document,
+    })
+}
+
+fn resolve_bundle_variant_route(fs: &GlobalFs, request_path: &str) -> Option<RouteResolution> {
+    let requested = VirtualPath::from_absolute(request_path.to_string()).ok()?;
+    if fs
+        .node_metadata(&requested)
+        .is_some_and(|metadata| metadata.is_bundle())
+    {
+        return Some(RouteResolution {
+            request_path: request_path.to_string(),
+            surface: RouteSurface::Content,
+            node_path: requested,
+            kind: ResolvedKind::Bundle,
+            params: BTreeMap::new(),
+        });
+    }
+
+    let variant_id = requested.file_name()?.to_string();
+    let bundle_path = requested.parent()?;
+    let bundle = fs.node_metadata(&bundle_path)?;
+    if !bundle.is_bundle() {
+        return None;
+    }
+    let bundle_meta = bundle.bundle.as_ref()?;
+    if !bundle_meta
+        .variants
+        .iter()
+        .any(|variant| variant.id == variant_id)
+    {
+        return None;
+    }
+
+    let mut params = BTreeMap::new();
+    params.insert("variant".to_string(), variant_id);
+
+    Some(RouteResolution {
+        request_path: request_path.to_string(),
+        surface: RouteSurface::Content,
+        node_path: bundle_path,
+        kind: ResolvedKind::Bundle,
+        params,
     })
 }
 
@@ -420,7 +470,10 @@ fn normalize_absolute_path(path: &str) -> Option<VirtualPath> {
 
 #[cfg(test)]
 mod tests {
-    use crate::domain::{EntryExtensions, Fields, NodeMetadata, RouteIndexEntry, SCHEMA_VERSION};
+    use crate::domain::{
+        BundleMetadata, BundleVariant, EntryExtensions, Fields, NodeMetadata, RouteIndexEntry,
+        SCHEMA_VERSION,
+    };
     use crate::ports::{ScannedDirectory, ScannedFile, ScannedSubtree};
 
     use super::*;
@@ -429,6 +482,7 @@ mod tests {
         NodeMetadata {
             schema: SCHEMA_VERSION,
             kind,
+            bundle: None,
             authored: Fields::default(),
             derived: Fields::default(),
         }
@@ -438,6 +492,7 @@ mod tests {
         NodeMetadata {
             schema: SCHEMA_VERSION,
             kind: NodeKind::Directory,
+            bundle: None,
             authored: Fields {
                 title: Some(name.to_string()),
                 ..Fields::default()
@@ -465,6 +520,69 @@ mod tests {
                 .collect(),
         };
 
+        let mut global = GlobalFs::empty();
+        global
+            .mount_scanned_subtree(VirtualPath::root(), &snapshot)
+            .unwrap();
+        global
+    }
+
+    fn bundle_site() -> GlobalFs {
+        let mut snapshot = ScannedSubtree {
+            files: vec![
+                ScannedFile {
+                    path: "writing/foo/en.md".to_string(),
+                    meta: make_meta(NodeKind::Page),
+                    extensions: EntryExtensions::default(),
+                },
+                ScannedFile {
+                    path: "writing/foo/ko.md".to_string(),
+                    meta: make_meta(NodeKind::Page),
+                    extensions: EntryExtensions::default(),
+                },
+            ],
+            directories: vec![
+                ScannedDirectory {
+                    path: "writing".to_string(),
+                    meta: make_dir_meta("writing"),
+                },
+                ScannedDirectory {
+                    path: "writing/foo".to_string(),
+                    meta: NodeMetadata {
+                        schema: SCHEMA_VERSION,
+                        kind: NodeKind::Bundle,
+                        bundle: Some(BundleMetadata {
+                            default_variant: "en".to_string(),
+                            variants: vec![
+                                BundleVariant {
+                                    id: "en".to_string(),
+                                    path: "en.md".to_string(),
+                                    label: "English".to_string(),
+                                    locale: Some("en".to_string()),
+                                    media_type: None,
+                                },
+                                BundleVariant {
+                                    id: "ko".to_string(),
+                                    path: "ko.md".to_string(),
+                                    label: "Korean".to_string(),
+                                    locale: Some("ko".to_string()),
+                                    media_type: None,
+                                },
+                            ],
+                        }),
+                        authored: Fields {
+                            title: Some("Foo".to_string()),
+                            ..Fields::default()
+                        },
+                        derived: Fields {
+                            kind: Some(NodeKind::Bundle),
+                            ..Fields::default()
+                        },
+                    },
+                },
+            ],
+        };
+        snapshot.files.sort_by(|a, b| a.path.cmp(&b.path));
         let mut global = GlobalFs::empty();
         global
             .mount_scanned_subtree(VirtualPath::root(), &snapshot)
@@ -567,6 +685,73 @@ mod tests {
         assert_eq!(resolved.kind, ResolvedKind::Page);
         assert_eq!(resolved.surface, RouteSurface::Content);
         assert_eq!(resolved.node_path.as_str(), "/db/fresh.md");
+    }
+
+    #[test]
+    fn resolves_bundle_root_to_bundle_directory() {
+        let fs = bundle_site();
+        let resolved = resolve_route(&fs, &RouteRequest::new("/writing/foo")).unwrap();
+
+        assert_eq!(resolved.kind, ResolvedKind::Bundle);
+        assert_eq!(resolved.node_path.as_str(), "/writing/foo");
+        assert_eq!(resolved.params.get("variant"), None);
+    }
+
+    #[test]
+    fn bundle_root_route_wins_over_derived_index_alias() {
+        let mut fs = bundle_site();
+        fs.replace_route_index([RouteIndexEntry {
+            route: "/writing/foo".to_string(),
+            node_path: "/writing/foo/en.md".to_string(),
+            kind: Some(NodeKind::Page),
+            renderer: Some(RendererKind::MarkdownPage),
+        }]);
+
+        let resolved = resolve_route(&fs, &RouteRequest::new("/writing/foo")).unwrap();
+        assert_eq!(resolved.kind, ResolvedKind::Bundle);
+        assert_eq!(resolved.node_path.as_str(), "/writing/foo");
+        assert_eq!(resolved.params.get("variant"), None);
+    }
+
+    #[test]
+    fn bundle_variant_route_wins_over_markdown_convention() {
+        let fs = bundle_site();
+        let resolved = resolve_route(&fs, &RouteRequest::new("/writing/foo/ko")).unwrap();
+
+        assert_eq!(resolved.kind, ResolvedKind::Bundle);
+        assert_eq!(resolved.node_path.as_str(), "/writing/foo");
+        assert_eq!(
+            resolved.params.get("variant").map(String::as_str),
+            Some("ko")
+        );
+    }
+
+    #[test]
+    fn bundle_variant_route_wins_over_derived_index_alias() {
+        let mut fs = bundle_site();
+        fs.replace_route_index([RouteIndexEntry {
+            route: "/writing/foo/ko".to_string(),
+            node_path: "/writing/foo/ko.md".to_string(),
+            kind: Some(NodeKind::Page),
+            renderer: Some(RendererKind::MarkdownPage),
+        }]);
+
+        let resolved = resolve_route(&fs, &RouteRequest::new("/writing/foo/ko")).unwrap();
+        assert_eq!(resolved.kind, ResolvedKind::Bundle);
+        assert_eq!(resolved.node_path.as_str(), "/writing/foo");
+        assert_eq!(
+            resolved.params.get("variant").map(String::as_str),
+            Some("ko")
+        );
+    }
+
+    #[test]
+    fn direct_bundle_variant_file_route_remains_a_file_route() {
+        let fs = bundle_site();
+        let resolved = resolve_route(&fs, &RouteRequest::new("/writing/foo/ko.md")).unwrap();
+
+        assert_eq!(resolved.kind, ResolvedKind::Page);
+        assert_eq!(resolved.node_path.as_str(), "/writing/foo/ko.md");
     }
 
     #[test]

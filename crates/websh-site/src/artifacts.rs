@@ -16,10 +16,28 @@ pub const ACK_COMMITMENT_JSON: &str = include_str!(concat!(
     "/../../assets/crypto/ack.commitment.json"
 ));
 
-pub fn attestation_artifact() -> Result<AttestationArtifact, serde_json::Error> {
-    AttestationArtifact::from_json_str(ATTESTATIONS_JSON)
+pub type SiteArtifactResult<T> = Result<T, SiteArtifactError>;
+
+#[derive(Debug, thiserror::Error)]
+pub enum SiteArtifactError {
+    #[error("parse bundled attestation artifact: {source}")]
+    Attestations {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("parse bundled ACK artifact: {source}")]
+    Ack {
+        #[source]
+        source: serde_json::Error,
+    },
 }
 
-pub fn ack_artifact() -> Result<AckArtifact, serde_json::Error> {
+pub fn attestation_artifact() -> SiteArtifactResult<AttestationArtifact> {
+    AttestationArtifact::from_json_str(ATTESTATIONS_JSON)
+        .map_err(|source| SiteArtifactError::Attestations { source })
+}
+
+pub fn ack_artifact() -> SiteArtifactResult<AckArtifact> {
     AckArtifact::from_json_str(ACK_COMMITMENT_JSON)
+        .map_err(|source| SiteArtifactError::Ack { source })
 }

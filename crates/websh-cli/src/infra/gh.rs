@@ -7,6 +7,8 @@
 use std::ffi::OsStr;
 use std::process::{Command as Process, Stdio};
 
+use anyhow::{Context, bail};
+
 use crate::CliResult;
 
 /// Verify that the `gh` CLI is installed and on `PATH`. Does not check
@@ -15,9 +17,10 @@ pub(crate) fn require_gh() -> CliResult {
     let probe = Process::new("gh").arg("--version").output();
     match probe {
         Ok(out) if out.status.success() => Ok(()),
-        _ => Err("the `gh` CLI is required (https://cli.github.com); \
+        _ => bail!(
+            "the `gh` CLI is required (https://cli.github.com); \
              ensure `gh auth status` reports an authenticated account before re-running"
-            .into()),
+        ),
     }
 }
 
@@ -41,7 +44,7 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    let out = Process::new("gh").args(args).output()?;
+    let out = Process::new("gh").args(args).output().context("run gh")?;
     if out.status.success() {
         return Ok(GhApiOutput::Success(
             String::from_utf8_lossy(&out.stdout).into_owned(),
@@ -52,7 +55,7 @@ where
     if is_github_not_found(&stdout) || is_github_not_found(&stderr) {
         return Ok(GhApiOutput::Missing);
     }
-    Err(format!(
+    bail!(
         "gh failed (exit {}): {}",
         out.status
             .code()
@@ -60,7 +63,6 @@ where
             .unwrap_or_else(|| "?".to_string()),
         stderr.trim()
     )
-    .into())
 }
 
 pub(crate) fn gh_resource_status<I, S>(args: I) -> CliResult<GhResourceStatus>
@@ -82,17 +84,16 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    let out = Process::new("gh").args(args).output()?;
+    let out = Process::new("gh").args(args).output().context("run gh")?;
     if !out.status.success() {
-        return Err(format!(
+        bail!(
             "gh failed (exit {}): {}",
             out.status
                 .code()
                 .map(|c| c.to_string())
                 .unwrap_or_else(|| "?".to_string()),
             String::from_utf8_lossy(&out.stderr).trim()
-        )
-        .into());
+        );
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
@@ -105,7 +106,8 @@ where
     Ok(Process::new("gh")
         .args(args)
         .stdout(Stdio::null())
-        .status()?
+        .status()
+        .context("run gh")?
         .success())
 }
 

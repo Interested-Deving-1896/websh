@@ -46,6 +46,18 @@ pub fn replace_request_path(path: &str) {
     dispatch_hashchange();
 }
 
+pub fn absolute_hash_url_for_request_path(path: &str) -> String {
+    let route_path = RouteRequest::new(path).url_path;
+    let Some(window) = window() else {
+        return format!("#{route_path}");
+    };
+    let location = window.location();
+    let origin = location.origin().unwrap_or_default();
+    let pathname = location.pathname().unwrap_or_else(|_| "/".to_string());
+    let search = location.search().unwrap_or_default();
+    format!("{origin}{pathname}{search}#{route_path}")
+}
+
 fn current_hash() -> String {
     window()
         .and_then(|w| w.location().hash().ok())

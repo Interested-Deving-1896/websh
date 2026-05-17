@@ -2,6 +2,7 @@ use std::ffi::OsString;
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
+use anyhow::{Context, bail};
 use websh_core::mempool::transform_mempool_frontmatter;
 use websh_site::{ATTESTATIONS_PATH, BOOTSTRAP_SITE};
 
@@ -143,7 +144,7 @@ pub(crate) fn promote_entry(root: &Path, args: PromoteOptions) -> CliResult {
 /// shape with category in `LEDGER_CATEGORIES`.
 fn parse_promote_path(repo_relative: &str) -> CliResult<PromoteTarget> {
     let entry_path = MempoolEntryPath::parse(repo_relative)
-        .map_err(|e| format!("invalid promote path `{repo_relative}`: {e}"))?;
+        .with_context(|| format!("invalid promote path `{repo_relative}`"))?;
     let repo_path = entry_path.as_str();
     let mut parts = repo_path.split('/');
     let category = parts.next().unwrap_or_default().to_string();
@@ -168,20 +169,18 @@ fn parse_promote_path(repo_relative: &str) -> CliResult<PromoteTarget> {
 fn ensure_promote_worktree_ready(root: &Path, target: &PromoteTarget) -> CliResult {
     let owned_dirty = git_status_for_paths(root, &command_owned_paths(target))?;
     if !owned_dirty.is_empty() {
-        return Err(format!(
+        bail!(
             "mempool promote would overwrite command-owned path(s). Commit/stash/remove them before retrying:\n{}",
             owned_dirty.trim()
-        )
-        .into());
+        );
     }
 
     let content_dirty = git_status_for_paths(root, &[PathBuf::from(DEFAULT_CONTENT_DIR)])?;
     if !content_dirty.is_empty() {
-        return Err(format!(
+        bail!(
             "uncommitted changes in content/. Stage/stash them before retrying:\n{}",
             content_dirty.trim()
-        )
-        .into());
+        );
     }
     Ok(())
 }
@@ -198,7 +197,7 @@ fn git_status_for_paths(root: &Path, paths: &[PathBuf]) -> CliResult<String> {
     }
     let out = git_output(root, args)?;
     if !out.success {
-        return Err(format!("git status failed: {}", out.stderr.trim()).into());
+        bail!("git status failed: {}", out.stderr.trim());
     }
     Ok(out.stdout)
 }
@@ -214,7 +213,7 @@ fn confirm_on_bundle_branch(
 ) -> CliResult {
     let out = git_output(root, ["rev-parse", "--abbrev-ref", "HEAD"])?;
     if !out.success {
-        return Err("git rev-parse failed (is this a git checkout?)".into());
+        bail!("git rev-parse failed (is this a git checkout?)");
     }
     let current = out.stdout.trim().to_string();
     let expected = BOOTSTRAP_SITE.branch;
@@ -229,43 +228,44 @@ fn confirm_on_bundle_branch(
         return Ok(());
     }
     if interaction == InteractionMode::NonInteractive {
-        return Err(format!(
+        bail!(
             "branch mismatch: HEAD is `{current}`, deploy branch is `{expected}`. Re-run with \
              --allow-branch-mismatch to continue in non-interactive mode"
-        )
-        .into());
+        );
     }
     eprint!("warn: HEAD is `{current}`, deploy branch is `{expected}`. Continue? [y/N] ");
     io::stderr().flush().ok();
     let mut answer = String::new();
-    io::stdin().read_line(&mut answer)?;
+    io::stdin()
+        .read_line(&mut answer)
+        .context("read confirmation from stdin")?;
     let trimmed = answer.trim();
     if trimmed.eq_ignore_ascii_case("y") || trimmed.eq_ignore_ascii_case("yes") {
         Ok(())
     } else {
-        Err(format!("aborted: not on `{expected}`").into())
+        bail!("aborted: not on `{expected}`")
     }
 }
 
 fn gh_verify_path_exists(mount: &MempoolMountInfo, target: &PromoteTarget) -> CliResult {
     match gh_path_status(mount, &target.repo_path)? {
         GhResourceStatus::Exists => Ok(()),
-        GhResourceStatus::Missing => Err(format!(
+        GhResourceStatus::Missing => bail!(
             "{} not found in {}@{}",
-            target.repo_path, mount.repo, mount.branch
-        )
-        .into()),
+            target.repo_path,
+            mount.repo,
+            mount.branch
+        ),
     }
 }
 
 fn ensure_local_target_absent(root: &Path, target: &PromoteTarget) -> CliResult {
     let p = root.join(&target.bundle_disk_path);
     if p.exists() {
-        return Err(format!(
+        bail!(
             "{} already exists locally — pick a different slug or `git rm` the existing file",
             target.bundle_disk_path.display()
-        )
-        .into());
+        );
     }
     Ok(())
 }
@@ -280,10 +280,11 @@ fn run_promote_steps(
     // Ensure the parent directory exists, then write the body.
     let abs_path = root.join(&target.bundle_disk_path);
     if let Some(parent) = abs_path.parent() {
-        std::fs::create_dir_all(parent)?;
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("create directory {}", parent.display()))?;
     }
     cleanup.body_written = true; // Set before write — partial-write on disk-full counts.
-    std::fs::write(&abs_path, body)?;
+    std::fs::write(&abs_path, body).with_context(|| format!("write {}", abs_path.display()))?;
     eprintln!("write:    {}", target.bundle_disk_path.display());
 
     if args.no_attest {
@@ -333,12 +334,12 @@ fn stage_and_commit(root: &Path, target: &PromoteTarget, did_attest: bool) -> Cl
         add_args.push(p.as_os_str().to_os_string());
     }
     if !git_status(root, add_args)? {
-        return Err("git add failed".into());
+        bail!("git add failed");
     }
 
     let msg = format!("promote: {}", target.slug_relpath);
     if !git_status(root, ["commit", "-m", &msg])? {
-        return Err("git commit failed".into());
+        bail!("git commit failed");
     }
     Ok(())
 }
@@ -365,11 +366,10 @@ fn validate_promote_write_set(
         return Ok(());
     }
 
-    Err(format!(
+    bail!(
         "mempool promote generated unexpected path changes outside its write-set:\n{}",
         unexpected.join("\n")
     )
-    .into())
 }
 
 fn porcelain_status_map(status: &str) -> std::collections::BTreeMap<PathBuf, String> {
@@ -469,6 +469,7 @@ fn git_head_pathspec(path: &Path) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::path::MempoolEntryPathError;
     use super::*;
     use std::fs;
     use std::process::{Command as Process, Stdio};
@@ -524,6 +525,14 @@ mod tests {
         fs::write(path, body).unwrap();
     }
 
+    fn promote_path_error(raw: &str) -> MempoolEntryPathError {
+        parse_promote_path(raw)
+            .unwrap_err()
+            .downcast_ref::<MempoolEntryPathError>()
+            .expect("parse error keeps typed path source")
+            .clone()
+    }
+
     #[test]
     fn parse_promote_path_extracts_category_slug_and_disk_path() {
         let t = parse_promote_path("writing/foo.md").unwrap();
@@ -535,8 +544,10 @@ mod tests {
 
     #[test]
     fn parse_promote_path_rejects_leading_slash() {
-        let err = parse_promote_path("/papers/bar.md").unwrap_err();
-        assert!(err.to_string().contains("repo-relative"));
+        assert_eq!(
+            promote_path_error("/papers/bar.md"),
+            MempoolEntryPathError::Absolute
+        );
     }
 
     #[test]
@@ -564,26 +575,34 @@ mod tests {
 
     #[test]
     fn parse_promote_path_rejects_non_md_extension() {
-        let err = parse_promote_path("writing/foo.txt").unwrap_err();
-        assert!(err.to_string().contains("must end in .md"));
+        assert_eq!(
+            promote_path_error("writing/foo.txt"),
+            MempoolEntryPathError::Extension
+        );
     }
 
     #[test]
     fn parse_promote_path_rejects_unknown_category() {
-        let err = parse_promote_path("fiction/foo.md").unwrap_err();
-        assert!(err.to_string().contains("unknown mempool category"));
+        assert_eq!(
+            promote_path_error("fiction/foo.md"),
+            MempoolEntryPathError::UnknownCategory("fiction".to_string())
+        );
     }
 
     #[test]
     fn parse_promote_path_rejects_nested_slug() {
-        let err = parse_promote_path("writing/series/foo.md").unwrap_err();
-        assert!(err.to_string().contains("<category>/<slug>.md"));
+        assert_eq!(
+            promote_path_error("writing/series/foo.md"),
+            MempoolEntryPathError::Shape
+        );
     }
 
     #[test]
     fn parse_promote_path_rejects_missing_slug() {
-        let err = parse_promote_path("writing/.md").unwrap_err();
-        assert!(err.to_string().contains("slug"));
+        assert_eq!(
+            promote_path_error("writing/.md"),
+            MempoolEntryPathError::Slug
+        );
     }
 
     #[test]

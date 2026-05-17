@@ -7,7 +7,7 @@
 //! Note: the similarly named `FileMetaStrip` (in `shared/file_meta_strip`)
 //! is a render component, not a data type.
 
-use websh_core::domain::{FsEntry, ImageDim, NodeKind, PageSize, VirtualPath};
+use websh_core::domain::{FsEntry, ImageDim, LinkRef, NodeKind, PageSize, VirtualPath};
 use websh_core::filesystem::GlobalFs;
 use websh_core::support::format::{format_thousands_u32, reading_time_minutes};
 
@@ -19,6 +19,7 @@ pub struct FileMeta {
     pub modified: Option<u64>,
     pub date: Option<String>,
     pub tags: Vec<String>,
+    pub links: Vec<LinkRef>,
     /// Effective node kind. Defaults to [`NodeKind::Asset`] when no entry
     /// is found (matches the engine's fallback for unknown files).
     pub kind: NodeKind,
@@ -55,6 +56,29 @@ impl FileMeta {
             .iter()
             .map(|tag| tag.trim().to_string())
             .filter(|tag| !tag.is_empty())
+            .collect()
+    }
+
+    pub fn clean_links(&self) -> Vec<LinkRef> {
+        self.links
+            .iter()
+            .filter_map(|link| {
+                let label = link.label.trim();
+                let url = link.url.trim();
+                if label.is_empty() || url.is_empty() {
+                    return None;
+                }
+                Some(LinkRef {
+                    label: label.to_string(),
+                    url: url.to_string(),
+                    kind: link
+                        .kind
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|kind| !kind.is_empty())
+                        .map(str::to_string),
+                })
+            })
             .collect()
     }
 
@@ -100,32 +124,36 @@ pub fn size_summary_parts(
         NodeKind::Asset => image_dimensions
             .map(|dim| vec![format!("{}×{}", dim.width, dim.height)])
             .unwrap_or_default(),
-        NodeKind::App | NodeKind::Redirect | NodeKind::Data | NodeKind::Directory => Vec::new(),
+        NodeKind::App
+        | NodeKind::Redirect
+        | NodeKind::Data
+        | NodeKind::Directory
+        | NodeKind::Bundle => Vec::new(),
     }
 }
 
 /// Project the `FsEntry` at `path` into a `FileMeta`. Returns `None` for
-/// directories, missing entries, or non-`File` variants.
+/// missing entries.
 pub fn file_meta_for_path(fs: &GlobalFs, path: &VirtualPath) -> Option<FileMeta> {
     fs.get_entry(path).and_then(file_meta_for_entry)
 }
 
 pub fn file_meta_for_entry(entry: &FsEntry) -> Option<FileMeta> {
     match entry {
-        FsEntry::File { meta, .. } => Some(FileMeta {
+        FsEntry::File { meta, .. } | FsEntry::Directory { meta, .. } => Some(FileMeta {
             title: meta.title().unwrap_or("").to_string(),
             description: meta.description().map(str::to_string),
             size: meta.size_bytes(),
             modified: meta.modified_at(),
             date: meta.date().map(str::to_string),
             tags: meta.tags_owned(),
+            links: meta.links_owned(),
             kind: meta.effective_kind(),
             page_size: meta.page_size().copied(),
             page_count: meta.page_count(),
             image_dimensions: meta.image_dimensions().copied(),
             word_count: meta.word_count(),
         }),
-        _ => None,
     }
 }
 
@@ -187,6 +215,7 @@ mod tests {
             NodeKind::Redirect,
             NodeKind::Data,
             NodeKind::Directory,
+            NodeKind::Bundle,
         ] {
             assert!(
                 meta_with_kind(kind).size_summary_parts().is_empty(),

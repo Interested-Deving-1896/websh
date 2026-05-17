@@ -499,6 +499,7 @@ mod tests {
             NodeMetadata {
                 schema: SCHEMA_VERSION,
                 kind: NodeKind::Page,
+                bundle: None,
                 authored: Fields::default(),
                 derived: Fields::default(),
             }
@@ -507,6 +508,7 @@ mod tests {
             NodeMetadata {
                 schema: SCHEMA_VERSION,
                 kind: NodeKind::Directory,
+                bundle: None,
                 authored: Fields {
                     title: Some(title.to_string()),
                     ..Fields::default()

@@ -70,6 +70,7 @@ mod tests {
         NodeMetadata {
             schema: SCHEMA_VERSION,
             kind,
+            bundle: None,
             authored: Fields::default(),
             derived: Fields::default(),
         }
@@ -79,6 +80,7 @@ mod tests {
         NodeMetadata {
             schema: SCHEMA_VERSION,
             kind: NodeKind::Directory,
+            bundle: None,
             authored: Fields {
                 title: if name.is_empty() {
                     None

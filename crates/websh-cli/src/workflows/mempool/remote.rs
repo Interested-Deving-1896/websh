@@ -1,3 +1,4 @@
+use anyhow::{Context, bail};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use serde::Deserialize;
@@ -64,13 +65,13 @@ impl<'a> GithubContentsClient<'a> {
     fn get_manifest(&self) -> CliResult<RemoteManifest> {
         let url = self.contents_url_at_ref(&self.repo_path("manifest.json"));
         let response_json = gh_capture(["api", url.as_str()])?;
-        let response: ContentsApiResponse = serde_json::from_str(&response_json)
-            .map_err(|e| format!("failed to parse manifest GET response: {e}"))?;
+        let response: ContentsApiResponse =
+            serde_json::from_str(&response_json).context("parse manifest GET response")?;
         let manifest_bytes = BASE64_STANDARD
             .decode(response.content.replace('\n', ""))
-            .map_err(|e| format!("failed to base64-decode manifest: {e}"))?;
-        let document: ContentManifestDocument = serde_json::from_slice(&manifest_bytes)
-            .map_err(|e| format!("failed to parse mempool manifest: {e}"))?;
+            .context("base64-decode manifest")?;
+        let document: ContentManifestDocument =
+            serde_json::from_slice(&manifest_bytes).context("parse mempool manifest")?;
         Ok(RemoteManifest {
             document,
             sha: response.sha,
@@ -131,12 +132,12 @@ impl<'a> GithubContentsClient<'a> {
             &format!("branch={}", self.mount.branch),
         ])?;
         if !deleted {
-            return Err(format!(
+            bail!(
                 "blob delete failed for {} (manifest already updated; orphan blob remains - \
                  re-run `websh-cli mempool drop --path {}` later to retry the blob delete)",
-                repo_path, repo_path
-            )
-            .into());
+                repo_path,
+                repo_path
+            );
         }
         Ok(true)
     }
@@ -147,7 +148,7 @@ impl<'a> GithubContentsClient<'a> {
             GhApiOutput::Success(file_sha_raw) => {
                 let file_sha = file_sha_raw.trim().trim_matches('"').to_string();
                 if file_sha.is_empty() {
-                    return Err(format!("could not extract sha for {repo_path}").into());
+                    bail!("could not extract sha for {repo_path}");
                 }
                 Ok(Some(file_sha))
             }
@@ -186,17 +187,17 @@ pub(crate) fn add_to_mempool_via_gh(
     file_body: &str,
 ) -> CliResult {
     let entry_path = MempoolEntryPath::parse(repo_path)
-        .map_err(|e| format!("invalid mempool entry path `{repo_path}`: {e}"))?;
+        .with_context(|| format!("invalid mempool entry path `{repo_path}`"))?;
     let repo_path = entry_path.as_str();
     let client = GithubContentsClient::new(mount);
 
     // Step 1: PUT the new file (no sha — it's a create, not an update).
     if !client.put_blob(repo_path, file_body, &format!("mempool: add {repo_path}"))? {
-        return Err(format!(
+        bail!(
             "file PUT failed for {repo_path} on {}@{}; nothing changed",
-            mount.repo, mount.branch
-        )
-        .into());
+            mount.repo,
+            mount.branch
+        );
     }
 
     // Step 2: read manifest, insert entry, PUT.
@@ -208,13 +209,14 @@ pub(crate) fn add_to_mempool_via_gh(
         &remote_manifest.sha,
         &format!("mempool: add {repo_path} (manifest)"),
     )? {
-        return Err(format!(
+        bail!(
             "manifest PUT failed; the file {} is on {}@{} but the manifest doesn't reference \
              it (runtime won't see it). Re-run `websh-cli mempool add` after deleting the file \
              via the GitHub web UI, or manually edit manifest.json.",
-            repo_path, mount.repo, mount.branch
-        )
-        .into());
+            repo_path,
+            mount.repo,
+            mount.branch
+        );
     }
 
     Ok(())
@@ -222,7 +224,7 @@ pub(crate) fn add_to_mempool_via_gh(
 
 pub(crate) fn fetch_mempool_body(mount: &MempoolMountInfo, repo_path: &str) -> CliResult<String> {
     let entry_path = MempoolEntryPath::parse(repo_path)
-        .map_err(|e| format!("invalid mempool entry path `{repo_path}`: {e}"))?;
+        .with_context(|| format!("invalid mempool entry path `{repo_path}`"))?;
     GithubContentsClient::new(mount).fetch_raw(entry_path.as_str())
 }
 
@@ -240,7 +242,7 @@ pub(crate) fn fetch_mempool_body(mount: &MempoolMountInfo, repo_path: &str) -> C
 /// to (or by `git gc`).
 pub(crate) fn drop_via_gh(mount: &MempoolMountInfo, path_in_repo: &str) -> CliResult<DropOutcome> {
     let entry_path = MempoolEntryPath::parse(path_in_repo)
-        .map_err(|e| format!("invalid mempool entry path `{path_in_repo}`: {e}"))?;
+        .with_context(|| format!("invalid mempool entry path `{path_in_repo}`"))?;
     let path_in_repo = entry_path.as_str();
     let client = GithubContentsClient::new(mount);
 
@@ -256,10 +258,7 @@ pub(crate) fn drop_via_gh(mount: &MempoolMountInfo, path_in_repo: &str) -> CliRe
             &remote_manifest.sha,
             &format!("mempool: drop {path_in_repo}"),
         )? {
-            return Err(format!(
-                "manifest update failed when dropping {path_in_repo}; nothing else changed"
-            )
-            .into());
+            bail!("manifest update failed when dropping {path_in_repo}; nothing else changed");
         }
     }
 
@@ -282,7 +281,7 @@ fn manifest_with_added_entry(
     file_body: &str,
 ) -> CliResult<ContentManifestDocument> {
     let canonical_path = VirtualPath::from_absolute(format!("/mempool/{repo_path}"))
-        .map_err(|e| format!("invalid mempool path /mempool/{repo_path}: {e}"))?;
+        .with_context(|| format!("invalid mempool path /mempool/{repo_path}"))?;
     let MempoolManifestState { meta, extensions } =
         build_mempool_manifest_state(file_body, &canonical_path);
     let new_entry = ContentManifestEntry {
@@ -308,9 +307,7 @@ fn manifest_without_entry(
 }
 
 fn manifest_to_pretty_json(manifest: &ContentManifestDocument) -> CliResult<String> {
-    Ok(serde_json::to_string_pretty(manifest)
-        .map_err(|e| format!("failed to re-serialize manifest: {e}"))?
-        + "\n")
+    Ok(serde_json::to_string_pretty(manifest).context("serialize mempool manifest")? + "\n")
 }
 
 pub(crate) enum DropOutcome {

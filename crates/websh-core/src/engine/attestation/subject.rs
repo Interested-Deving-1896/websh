@@ -28,7 +28,6 @@ pub struct Envelope {
     pub route: String,
     pub issued_at: String,
     pub content_files: Vec<ContentFile>,
-    #[serde(default)]
     pub attestations: Vec<Attestation>,
 }
 
@@ -59,12 +58,19 @@ pub struct PageSubject {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BundleSubject {
+    #[serde(flatten)]
+    pub env: Envelope,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Subject {
     Homepage(HomepageSubject),
     Ledger(LedgerSubject),
     Document(DocumentSubject),
     Page(PageSubject),
+    Bundle(BundleSubject),
 }
 
 impl Subject {
@@ -74,6 +80,7 @@ impl Subject {
             Subject::Ledger(s) => &s.env,
             Subject::Document(s) => &s.env,
             Subject::Page(s) => &s.env,
+            Subject::Bundle(s) => &s.env,
         }
     }
 
@@ -83,6 +90,7 @@ impl Subject {
             Subject::Ledger(s) => &mut s.env,
             Subject::Document(s) => &mut s.env,
             Subject::Page(s) => &mut s.env,
+            Subject::Bundle(s) => &mut s.env,
         }
     }
 
@@ -112,6 +120,7 @@ impl Subject {
             Subject::Ledger(_) => "ledger",
             Subject::Document(_) => "document",
             Subject::Page(_) => "page",
+            Subject::Bundle(_) => "bundle",
         }
     }
 
@@ -119,14 +128,14 @@ impl Subject {
         subject_id_for_route(self.route())
     }
 
-    pub fn content_sha256(&self) -> Result<String, serde_json::Error> {
+    pub fn content_sha256(&self) -> Result<String, SubjectCanonicalError> {
         compute_content_sha256(self.content_files())
     }
 
     /// The canonical text bound by attestation signatures.
     ///
     /// Field order is part of the contract — changes invalidate every existing signature.
-    pub fn canonical_message(&self) -> Result<String, serde_json::Error> {
+    pub fn canonical_message(&self) -> Result<String, SubjectCanonicalError> {
         let id = self.id();
         let content_sha256 = self.content_sha256()?;
         let env = self.envelope();
@@ -153,6 +162,11 @@ impl Subject {
                 route = env.route,
                 issued_at = env.issued_at,
             ),
+            Subject::Bundle(_) => format!(
+                "id={id}\nroute={route}\nkind=bundle\ncontent_sha256={content_sha256}\nissued_at={issued_at}",
+                route = env.route,
+                issued_at = env.issued_at,
+            ),
         };
         Ok(format!("{SUBJECT_MESSAGE_SCHEME}\n{body}"))
     }
@@ -161,35 +175,60 @@ impl Subject {
     ///
     /// - `content_files` must be strictly sorted by path with no duplicates
     /// - `canonical_message` must serialize without error
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), SubjectValidationError> {
         let env = self.envelope();
         let mut last: Option<&str> = None;
         for file in &env.content_files {
             if let Some(prev) = last {
                 if file.path.as_str() == prev {
-                    return Err(format!("duplicate content path: {}", file.path));
+                    return Err(SubjectValidationError::DuplicateContentPath {
+                        path: file.path.clone(),
+                    });
                 }
                 if file.path.as_str() < prev {
-                    return Err(format!(
-                        "content_files not strictly sorted: {prev} > {}",
-                        file.path
-                    ));
+                    return Err(SubjectValidationError::UnsortedContentFiles {
+                        previous: prev.to_string(),
+                        current: file.path.clone(),
+                    });
                 }
             }
             last = Some(file.path.as_str());
         }
-        self.canonical_message()
-            .map_err(|err| format!("canonical_message failed: {err}"))?;
+        self.canonical_message()?;
         Ok(())
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SubjectCanonicalError {
+    #[error("serialize subject content files: {source}")]
+    ContentFiles {
+        #[source]
+        source: serde_json::Error,
+    },
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SubjectValidationError {
+    #[error("duplicate content path: {path}")]
+    DuplicateContentPath { path: String },
+    #[error("content_files not strictly sorted: {previous} > {current}")]
+    UnsortedContentFiles { previous: String, current: String },
+    #[error("canonical_message failed: {source}")]
+    Canonical {
+        #[from]
+        source: SubjectCanonicalError,
+    },
 }
 
 pub fn subject_id_for_route(route: &str) -> String {
     format!("route:{route}")
 }
 
-pub fn compute_content_sha256(files: &[ContentFile]) -> Result<String, serde_json::Error> {
-    serde_json::to_vec(files).map(|bytes| sha256_hex(&bytes))
+pub fn compute_content_sha256(files: &[ContentFile]) -> Result<String, SubjectCanonicalError> {
+    serde_json::to_vec(files)
+        .map(|bytes| sha256_hex(&bytes))
+        .map_err(|source| SubjectCanonicalError::ContentFiles { source })
 }
 
 #[cfg(test)]
@@ -257,11 +296,23 @@ mod tests {
         })
     }
 
+    fn bundle() -> Subject {
+        Subject::Bundle(BundleSubject {
+            env: Envelope {
+                route: "/writing/foo".to_string(),
+                issued_at: "2026-04-30".to_string(),
+                content_files: sample_files(),
+                attestations: Vec::new(),
+            },
+        })
+    }
+
     #[test]
     fn id_is_route_prefixed() {
         assert_eq!(homepage().id(), "route:/");
         assert_eq!(ledger().id(), "route:/ledger");
         assert_eq!(document().id(), "route:/keys/wonjae.asc");
+        assert_eq!(bundle().id(), "route:/writing/foo");
     }
 
     #[test]
@@ -270,6 +321,7 @@ mod tests {
         assert_eq!(ledger().kind_str(), "ledger");
         assert_eq!(document().kind_str(), "document");
         assert_eq!(page().kind_str(), "page");
+        assert_eq!(bundle().kind_str(), "bundle");
     }
 
     #[test]
@@ -313,6 +365,16 @@ mod tests {
     }
 
     #[test]
+    fn canonical_message_bundle_is_exact() {
+        let subject = bundle();
+        let content_sha = subject.content_sha256().unwrap();
+        let expected = format!(
+            "websh.subject.v1\nid=route:/writing/foo\nroute=/writing/foo\nkind=bundle\ncontent_sha256={content_sha}\nissued_at=2026-04-30"
+        );
+        assert_eq!(subject.canonical_message().unwrap(), expected);
+    }
+
+    #[test]
     fn canonical_message_is_deterministic() {
         let subject = homepage();
         assert_eq!(
@@ -344,6 +406,7 @@ mod tests {
         assert!(ledger().validate().is_ok());
         assert!(document().validate().is_ok());
         assert!(page().validate().is_ok());
+        assert!(bundle().validate().is_ok());
     }
 
     #[test]
@@ -422,6 +485,28 @@ mod tests {
         let back: Subject = serde_json::from_str(&json).unwrap();
         assert_eq!(subject, back);
         assert!(json.contains("\"kind\":\"page\""));
+    }
+
+    #[test]
+    fn serde_roundtrip_bundle() {
+        let subject = bundle();
+        let json = serde_json::to_string(&subject).unwrap();
+        let back: Subject = serde_json::from_str(&json).unwrap();
+        assert_eq!(subject, back);
+        assert!(json.contains("\"kind\":\"bundle\""));
+    }
+
+    #[test]
+    fn serde_requires_attestations_field() {
+        let json = r#"{
+            "kind": "page",
+            "route": "/papers/tabula",
+            "issued_at": "2026-04-30",
+            "content_files": []
+        }"#;
+
+        let parsed = serde_json::from_str::<Subject>(json);
+        assert!(parsed.is_err());
     }
 
     #[test]

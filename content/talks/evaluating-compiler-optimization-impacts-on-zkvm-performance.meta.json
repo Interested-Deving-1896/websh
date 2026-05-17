@@ -10,6 +10,13 @@
       "zk",
       "zkvm",
       "compilers"
+    ],
+    "links": [
+      {
+        "label": "arXiv",
+        "url": "https://arxiv.org/abs/2508.17518",
+        "kind": "paper"
+      }
     ]
   },
   "derived": {

@@ -1,6 +1,8 @@
 use std::path::Path;
 use std::process::Command;
 
+use anyhow::{Context, bail};
+
 use crate::CliResult;
 
 pub(crate) struct CapturedOutput {
@@ -26,10 +28,10 @@ pub(crate) fn run_status(
 
     let status = command
         .status()
-        .map_err(|error| format!("failed to run {program}: {error}"))?;
+        .with_context(|| format!("run {program} in {}", root.display()))?;
 
     if !status.success() {
-        return Err(format!("{program} exited with status {status}").into());
+        bail!("{program} exited with status {status}");
     }
 
     Ok(())
@@ -46,13 +48,13 @@ pub(crate) fn run_output(
         .envs(envs.iter().map(|(key, value)| (key, value)))
         .current_dir(root)
         .output()
-        .map_err(|error| format!("failed to run {program}: {error}"))?;
+        .with_context(|| format!("run {program} in {}", root.display()))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
     if !output.status.success() {
-        return Err(format!("{program} exited with status {}\n{stderr}", output.status).into());
+        bail!("{program} exited with status {}\n{stderr}", output.status);
     }
 
     Ok(CapturedOutput { stdout, stderr })

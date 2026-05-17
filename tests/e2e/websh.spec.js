@@ -7,8 +7,14 @@ const appOrigin = new URL(appBaseUrl).origin;
 const admin = '0x2c4b04a4aeb6e18c2f8a5c8b4a3f62c0cf33795a';
 const expectedHead = '1111111111111111111111111111111111111111';
 const themeStorageKey = 'user.THEME';
+const langStorageKey = 'user.LANG';
+const readerTextScaleStorageKey = 'reader.TEXT_SCALE';
+const tinyPng = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
+  'base64'
+);
 
-function nodeMetadata(kind, { title, description = null, date = null, tags = [], size = null, modified = null, access = null, renderer = null } = {}) {
+function nodeMetadata(kind, { title, description = null, date = null, tags = [], size = null, modified = null, access = null, renderer = null, bundle = null } = {}) {
   const authored = {};
   if (title !== undefined && title !== null) authored.title = title;
   if (description !== null) authored.description = description;
@@ -21,12 +27,14 @@ function nodeMetadata(kind, { title, description = null, date = null, tags = [],
   if (size !== null) derived.size_bytes = size;
   if (modified !== null) derived.modified_at = modified;
 
-  return {
+  const metadata = {
     schema: 1,
     kind,
     authored,
     derived
   };
+  if (bundle !== null) metadata.bundle = bundle;
+  return metadata;
 }
 
 function fileEntry(path, title, options = {}) {
@@ -46,6 +54,13 @@ function dirEntry(path, title, options = {}) {
   return {
     path,
     metadata: nodeMetadata('directory', { title, ...options })
+  };
+}
+
+function bundleEntry(path, title, options = {}) {
+  return {
+    path,
+    metadata: nodeMetadata('bundle', { title, ...options })
   };
 }
 
@@ -155,6 +170,14 @@ function makeLedger(inputs) {
   };
 }
 
+function contentTypeForPath(pathname) {
+  if (pathname.endsWith('.json')) return 'application/json';
+  if (pathname.endsWith('.pdf')) return 'application/pdf';
+  if (pathname.endsWith('.png')) return 'image/png';
+  if (pathname.endsWith('.svg')) return 'image/svg+xml';
+  return 'text/plain';
+}
+
 function deferred() {
   let resolve;
   const promise = new Promise((innerResolve) => {
@@ -190,6 +213,127 @@ function freshRawResponses() {
   ]);
 }
 
+function contentPathEntries(path, title) {
+  const parts = path.split('/').filter(Boolean);
+  const dirs = [];
+  for (let idx = 0; idx < parts.length - 1; idx += 1) {
+    const dirPath = parts.slice(0, idx + 1).join('/');
+    dirs.push(dirEntry(dirPath, parts[idx]));
+  }
+  return [...dirs, fileEntry(path, title)];
+}
+
+function installContentPage(path, title, body = '# Fixture page') {
+  rawResponses.set(
+    '/content/manifest.json',
+    JSON.stringify(manifestDocument([
+      ...siteEntries,
+      ...contentPathEntries(path, title)
+    ]))
+  );
+  rawResponses.set(`/content/${path}`, body);
+}
+
+function installBundleArticleFixture() {
+  const bundle = {
+    default_variant: 'en',
+    variants: [
+      { id: 'en', path: 'en.md', label: 'English', locale: 'en' },
+      { id: 'ko', path: 'ko.md', label: '한국어', locale: 'ko' }
+    ]
+  };
+  const manifest = manifestDocument([
+    ...siteManifest.entries,
+    dirEntry('writing', 'writing'),
+    bundleEntry('writing/foo', 'Foo Bundle', {
+      date: '2026-05-15',
+      tags: ['zk'],
+      description: 'One work with two language variants.',
+      bundle
+    }),
+    fileEntry('writing/foo/en.md', 'English Foo', {
+      date: '2026-05-15',
+      tags: ['zk'],
+      description: 'English rendition.'
+    }),
+    fileEntry('writing/foo/ko.md', '한국어 Foo', {
+      date: '2026-05-15',
+      tags: ['zk'],
+      description: '한국어 rendition.'
+    }),
+    fileEntry('writing/foo/cover.png', 'Cover', { kind: 'asset' })
+  ]);
+
+  rawResponses.set('/content/manifest.json', JSON.stringify(manifest));
+  rawResponses.set('/content/writing/foo/en.md', '# English Foo\n\nEnglish body.');
+  rawResponses.set('/content/writing/foo/ko.md', '# 한국어 Foo\n\n한국어 본문.');
+  rawResponses.set('/content/writing/foo/cover.png', tinyPng);
+}
+
+async function readBreadcrumbLayout(page) {
+  return page.evaluate(() => {
+    const breadcrumb = document.querySelector('[data-chrome-role="breadcrumb"]');
+    const nav = document.querySelector('[data-chrome-role="nav"]');
+    const current = document.querySelector('[data-breadcrumb-current="true"]');
+    if (!breadcrumb || !nav || !current) return null;
+
+    const breadcrumbRect = breadcrumb.getBoundingClientRect();
+    const navRect = nav.getBoundingClientRect();
+    const overlapsVertically = breadcrumbRect.top < navRect.bottom && breadcrumbRect.bottom > navRect.top;
+    const overlapsHorizontally = breadcrumbRect.left < navRect.right && breadcrumbRect.right > navRect.left;
+    const chromeBlockerOverlaps = Array.from(document.querySelectorAll('[data-chrome-role]'))
+      .filter((element) => element !== breadcrumb)
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        const vertical = breadcrumbRect.top < rect.bottom && breadcrumbRect.bottom > rect.top;
+        const horizontal = breadcrumbRect.left < rect.right && breadcrumbRect.right > rect.left;
+        return {
+          role: element.getAttribute('data-chrome-role'),
+          overlaps: vertical && horizontal
+        };
+      })
+      .filter((entry) => entry.overlaps)
+      .map((entry) => entry.role);
+    const crumbChromeBlockerOverlaps = Array.from(breadcrumb.children)
+      .flatMap((crumb) => {
+        const crumbRect = crumb.getBoundingClientRect();
+        return Array.from(document.querySelectorAll('[data-chrome-role]'))
+          .filter((element) => element !== breadcrumb)
+          .map((element) => {
+            const rect = element.getBoundingClientRect();
+            const vertical = crumbRect.top < rect.bottom && crumbRect.bottom > rect.top;
+            const horizontal = crumbRect.left < rect.right && crumbRect.right > rect.left;
+            return {
+              crumb: crumb.textContent.trim(),
+              role: element.getAttribute('data-chrome-role'),
+              overlaps: vertical && horizontal
+            };
+          })
+          .filter((entry) => entry.overlaps)
+          .map(({ crumb, role }) => `${crumb}:${role}`);
+      });
+
+    return {
+      visibleCrumbs: Array.from(
+        breadcrumb.querySelectorAll(':scope > a, :scope > span[data-breadcrumb-current]')
+      ).map((element) => ({
+        type: element.hasAttribute('data-breadcrumb-current') ? 'current' : 'crumb',
+        text: element.textContent.trim(),
+        width: element.getBoundingClientRect().width,
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth
+      })),
+      navBreadcrumbOverlap: overlapsVertically && overlapsHorizontally,
+      chromeBlockerOverlaps,
+      crumbChromeBlockerOverlaps,
+      scrollWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+      currentClientWidth: current.clientWidth,
+      currentScrollWidth: current.scrollWidth
+    };
+  });
+}
+
 test.beforeEach(async ({ page }) => {
   rawResponses = freshRawResponses();
 
@@ -218,12 +362,7 @@ test.beforeEach(async ({ page }) => {
       await route.fulfill({ status: 404, contentType: 'text/plain', body: `missing ${url.pathname}` });
       return;
     }
-    const contentType = url.pathname.endsWith('.json')
-      ? 'application/json'
-      : url.pathname.endsWith('.pdf')
-        ? 'application/pdf'
-        : 'text/plain';
-    await route.fulfill({ status: 200, contentType, body });
+    await route.fulfill({ status: 200, contentType: contentTypeForPath(url.pathname), body });
   });
 
   await page.route('https://raw.githubusercontent.com/**', async (route) => {
@@ -233,12 +372,7 @@ test.beforeEach(async ({ page }) => {
       await route.fulfill({ status: 404, contentType: 'text/plain', body: `missing ${url.pathname}` });
       return;
     }
-    const contentType = url.pathname.endsWith('.json')
-      ? 'application/json'
-      : url.pathname.endsWith('.pdf')
-        ? 'application/pdf'
-        : 'text/plain';
-    await route.fulfill({ status: 200, contentType, body });
+    await route.fulfill({ status: 200, contentType: contentTypeForPath(url.pathname), body });
   });
 });
 
@@ -532,6 +666,7 @@ test('direct ledger waits for root manifest before reading the content ledger', 
   const { pageErrors, consoleErrors } = await collectBrowserErrors(page);
   await page.goto(`${baseUrl}/#/ledger`, { waitUntil: 'domcontentloaded' });
   await expect(page.locator('body')).toContainText('ledger pending', { timeout: 10000 });
+  await expect(page.getByRole('navigation', { name: 'path' })).toHaveText('~/ledger');
 
   await manifestRequested.promise;
   expect(ledgerRequests).toBe(0);
@@ -563,6 +698,7 @@ test('direct ledger with failed root manifest does not read the content ledger',
   const { pageErrors, consoleErrors } = await collectBrowserErrors(page);
   await page.goto(`${baseUrl}/#/ledger`, { waitUntil: 'domcontentloaded' });
   await expect(page.locator('body')).toContainText('root mount failed', { timeout: 10000 });
+  await expect(page.getByRole('navigation', { name: 'path' })).toHaveText('~/ledger');
   expect(ledgerRequests).toBe(0);
   expect(pageErrors).toEqual([]);
   expect(consoleErrors.filter((message) => !message.includes('status of 404'))).toEqual([]);
@@ -612,6 +748,121 @@ for (const [hashPath, expectedText] of directLoadCases) {
     expect(consoleErrors).toEqual([]);
   });
 }
+
+test('site chrome breadcrumb ellipsizes current crumb without collapsing path', async ({ page }) => {
+  const path = 'writing/a-current-title-that-is-long-enough-to-need-css-truncation-before-path-collapse.md';
+  installContentPage(path, 'Long Current Crumb', '# Long current crumb');
+  await page.setViewportSize({ width: 560, height: 720 });
+
+  const { pageErrors, consoleErrors } = await collectBrowserErrors(page);
+  await page.goto(`${baseUrl}/#/${path}`, { waitUntil: 'networkidle' });
+  await expect(page.locator('body')).toContainText('Long current crumb', { timeout: 10000 });
+
+  await expect(async () => {
+    const layout = await readBreadcrumbLayout(page);
+    expect(layout).not.toBeNull();
+    expect(layout.visibleCrumbs.map((crumb) => crumb.type)).toEqual(['crumb', 'crumb', 'current']);
+    expect(layout.navBreadcrumbOverlap).toBe(false);
+    expect(layout.chromeBlockerOverlaps).toEqual([]);
+    expect(layout.crumbChromeBlockerOverlaps).toEqual([]);
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.viewportWidth);
+    expect(layout.currentScrollWidth).toBeGreaterThan(layout.currentClientWidth);
+  }).toPass({ timeout: 10000 });
+
+  expect(pageErrors).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+test('site chrome breadcrumb ellipsizes crumbs with the same shrink policy', async ({ page }) => {
+  const path = 'writing/zk-proofs-from-a-compiler-perspective/ko.md';
+  installContentPage(path, 'ZK Proofs from a Compiler Perspective', '# ZK body');
+  await page.setViewportSize({ width: 360, height: 720 });
+
+  const { pageErrors, consoleErrors } = await collectBrowserErrors(page);
+  await page.goto(`${baseUrl}/#/ledger`, { waitUntil: 'networkidle' });
+
+  await expect(async () => {
+    const layout = await readBreadcrumbLayout(page);
+    expect(layout).not.toBeNull();
+    expect(layout.visibleCrumbs.map((crumb) => crumb.type)).toEqual(['crumb', 'current']);
+    expect(layout.visibleCrumbs.map((crumb) => crumb.text)).toEqual(['~', 'ledger']);
+    expect(layout.navBreadcrumbOverlap).toBe(false);
+    expect(layout.chromeBlockerOverlaps).toEqual([]);
+    expect(layout.crumbChromeBlockerOverlaps).toEqual([]);
+  }).toPass({ timeout: 10000 });
+
+  await page.goto(`${baseUrl}/#/${path}`, { waitUntil: 'networkidle' });
+  await expect(page.locator('body')).toContainText('ZK body', { timeout: 10000 });
+
+  await expect(async () => {
+    const layout = await readBreadcrumbLayout(page);
+    expect(layout).not.toBeNull();
+    expect(layout.visibleCrumbs.map((crumb) => crumb.type)).toEqual(['crumb', 'crumb', 'crumb', 'current']);
+    expect(layout.visibleCrumbs.map((crumb) => crumb.text)).toEqual(['~', 'writing', 'zk-proofs-from-a-compiler-perspective', 'ko.md']);
+    const longMiddleCrumb = layout.visibleCrumbs[2];
+    const currentCrumb = layout.visibleCrumbs[3];
+    expect(longMiddleCrumb.scrollWidth).toBeGreaterThan(longMiddleCrumb.clientWidth);
+    expect(currentCrumb.scrollWidth).toBeGreaterThan(currentCrumb.clientWidth);
+    expect(layout.navBreadcrumbOverlap).toBe(false);
+    expect(layout.chromeBlockerOverlaps).toEqual([]);
+    expect(layout.crumbChromeBlockerOverlaps).toEqual([]);
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.viewportWidth);
+  }).toPass({ timeout: 10000 });
+
+  expect(pageErrors).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+test('site chrome breadcrumb ellipsizes long paths before colliding on narrow nested routes', async ({ page }) => {
+  const path = [
+    'writing',
+    'research',
+    'compiler-notes',
+    'zkvm-performance',
+    'a-very-long-current-title-that-would-otherwise-collide-with-navigation.md'
+  ].join('/');
+  installContentPage(path, 'Nested Long Crumb', '# Nested long crumb');
+
+  const { pageErrors, consoleErrors } = await collectBrowserErrors(page);
+  await page.setViewportSize({ width: 360, height: 720 });
+  await page.goto(`${baseUrl}/#/${path}`, { waitUntil: 'networkidle' });
+  await expect(page.locator('body')).toContainText('Nested long crumb', { timeout: 10000 });
+
+  await expect(async () => {
+    const layout = await readBreadcrumbLayout(page);
+    expect(layout).not.toBeNull();
+    expect(layout.navBreadcrumbOverlap).toBe(false);
+    expect(layout.chromeBlockerOverlaps).toEqual([]);
+    expect(layout.crumbChromeBlockerOverlaps).toEqual([]);
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.viewportWidth);
+  }).toPass({ timeout: 10000 });
+
+  for (const width of [420, 460, 500, 540, 580, 620, 660, 800, 900]) {
+    await page.setViewportSize({ width, height: 720 });
+    await expect(async () => {
+      const layout = await readBreadcrumbLayout(page);
+      expect(layout).not.toBeNull();
+      expect(layout.visibleCrumbs.some((crumb) => crumb.scrollWidth > crumb.clientWidth)).toBe(true);
+      expect(layout.navBreadcrumbOverlap).toBe(false);
+      expect(layout.chromeBlockerOverlaps).toEqual([]);
+      expect(layout.crumbChromeBlockerOverlaps).toEqual([]);
+      expect(layout.scrollWidth).toBeLessThanOrEqual(layout.viewportWidth);
+    }).toPass({ timeout: 10000 });
+  }
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(async () => {
+    const layout = await readBreadcrumbLayout(page);
+    expect(layout).not.toBeNull();
+    expect(layout.navBreadcrumbOverlap).toBe(false);
+    expect(layout.chromeBlockerOverlaps).toEqual([]);
+    expect(layout.crumbChromeBlockerOverlaps).toEqual([]);
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.viewportWidth);
+  }).toPass({ timeout: 10000 });
+
+  expect(pageErrors).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
 
 test('home navigation stays inside the hash router', async ({ page }) => {
   const pageErrors = [];
@@ -712,6 +963,173 @@ test('markdown reader fetches source once per route load', async ({ page }) => {
   expect(consoleErrors).toEqual([]);
 });
 
+test('reader actions menu controls text size and copies current link', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: appOrigin });
+
+  const { pageErrors, consoleErrors } = await collectBrowserErrors(page);
+  await page.goto(`${baseUrl}/#/docs/old.md`, { waitUntil: 'networkidle' });
+  await expect(page.locator('body')).toContainText('old', { timeout: 10000 });
+  await expect(page.locator('[data-reader-body="true"]')).toHaveAttribute('data-text-scale', 'normal');
+
+  await page.getByRole('button', { name: 'Reader actions' }).click();
+  await expect(page.getByRole('dialog', { name: 'Reader actions' })).toBeVisible();
+  await page.getByRole('button', { name: 'Increase text size' }).click();
+  await expect(page.locator('[data-reader-body="true"]')).toHaveAttribute('data-text-scale', 'large');
+  await expect.poll(() => page.evaluate((key) => localStorage.getItem(key), readerTextScaleStorageKey)).toBe('large');
+
+  await page.getByRole('button', { name: 'copy link' }).click();
+  await expect(page.getByRole('button', { name: /copied/i })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(`${appBaseUrl}/#/docs/old.md`);
+
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: 'Reader actions' })).toBeHidden();
+
+  await page.reload({ waitUntil: 'networkidle' });
+  await expect(page.locator('[data-reader-body="true"]')).toHaveAttribute('data-text-scale', 'large');
+
+  expect(pageErrors).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+test('bundle article routes select variants without duplicate home entries', async ({ page }) => {
+  const bundle = {
+    default_variant: 'en',
+    variants: [
+      { id: 'en', path: 'en.md', label: 'English', locale: 'en' },
+      { id: 'ko', path: 'ko.md', label: '한국어', locale: 'ko' }
+    ]
+  };
+  const manifest = manifestDocument([
+    ...siteManifest.entries,
+    dirEntry('writing', 'writing'),
+    bundleEntry('writing/foo', 'Foo Bundle', {
+      date: '2026-05-15',
+      tags: ['zk'],
+      description: 'One work with two language variants.',
+      bundle
+    }),
+    fileEntry('writing/foo/en.md', 'English Foo', {
+      date: '2026-05-15',
+      tags: ['zk'],
+      description: 'English rendition.'
+    }),
+    fileEntry('writing/foo/ko.md', '한국어 Foo', {
+      date: '2026-05-15',
+      tags: ['zk'],
+      description: '한국어 rendition.'
+    }),
+    fileEntry('writing/foo/cover.png', 'Cover', { kind: 'asset' })
+  ]);
+  const ledger = makeLedger([
+    makeLedgerEntry({
+      route: '/writing/foo',
+      path: 'writing/foo',
+      date: '2026-05-15',
+      files: [
+        {
+          path: 'content/writing/foo/_index.dir.json',
+          sha256: normalizedSha('a'),
+          bytes: 300
+        },
+        {
+          path: 'content/writing/foo/cover.png',
+          sha256: normalizedSha('d'),
+          bytes: tinyPng.length
+        },
+        {
+          path: 'content/writing/foo/en.md',
+          sha256: normalizedSha('b'),
+          bytes: 28
+        },
+        {
+          path: 'content/writing/foo/ko.md',
+          sha256: normalizedSha('c'),
+          bytes: 24
+        }
+      ]
+    })
+  ]);
+  rawResponses.set('/content/manifest.json', JSON.stringify(manifest));
+  rawResponses.set('/content/.websh/ledger.json', JSON.stringify(ledger));
+  rawResponses.set('/content/writing/foo/en.md', '# English Foo\n\nEnglish body.');
+  rawResponses.set('/content/writing/foo/ko.md', '# 한국어 Foo\n\n한국어 본문.');
+  rawResponses.set('/content/writing/foo/cover.png', tinyPng);
+  await page.addInitScript((key) => {
+    if (!localStorage.getItem(key)) localStorage.setItem(key, 'en');
+  }, langStorageKey);
+
+  const { pageErrors, consoleErrors } = await collectBrowserErrors(page);
+  await page.goto(`${baseUrl}/#/`, { waitUntil: 'networkidle' });
+  const writingLink = page
+    .getByRole('navigation', { name: 'Site index' })
+    .getByRole('link', { name: /writing/ });
+  await expect(writingLink).toContainText('1', { timeout: 10000 });
+  await expect(page.getByRole('link', { name: 'Foo Bundle' })).toHaveCount(1);
+
+  await page.goto(`${baseUrl}/#/writing/foo`, { waitUntil: 'networkidle' });
+  await expect(page.locator('body')).toContainText('English body.', { timeout: 10000 });
+  await expect(page.locator('body')).toContainText('Variants');
+  await page.getByRole('link', { name: '한국어' }).click();
+  await page.waitForURL('**/#/writing/foo/ko');
+  await expect(page.locator('body')).toContainText('한국어 본문.', { timeout: 10000 });
+  await expect(page.locator('[aria-current="true"]')).toContainText('한국어');
+  await expect.poll(() => page.evaluate((key) => localStorage.getItem(key), langStorageKey)).toBe('ko');
+
+  await page.goto(`${baseUrl}/#/writing/foo`, { waitUntil: 'networkidle' });
+  await expect(page.locator('body')).toContainText('한국어 본문.', { timeout: 10000 });
+
+  await page.goto(`${baseUrl}/#/writing/foo/en`, { waitUntil: 'networkidle' });
+  await expect(page.locator('body')).toContainText('English body.', { timeout: 10000 });
+
+  await page.goto(`${baseUrl}/#/writing/foo/ko.md`, { waitUntil: 'networkidle' });
+  await expect(page.locator('body')).toContainText('한국어 본문.', { timeout: 10000 });
+  await expect(page.locator('body')).not.toContainText('Variants');
+
+  await page.goto(`${baseUrl}/#/writing/foo/cover.png`, { waitUntil: 'networkidle' });
+  await expect(page.getByRole('img', { name: 'Cover' })).toHaveAttribute('src', /cover\.png/);
+
+  expect(pageErrors).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+test('browser language initializes LANG for bundle default routes', async ({ page }) => {
+  installBundleArticleFixture();
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'languages', {
+      configurable: true,
+      get: () => ['ko-KR', 'en-US']
+    });
+    Object.defineProperty(navigator, 'language', {
+      configurable: true,
+      get: () => 'ko-KR'
+    });
+  });
+
+  const { pageErrors, consoleErrors } = await collectBrowserErrors(page);
+  await page.goto(`${baseUrl}/#/writing/foo`, { waitUntil: 'networkidle' });
+  await expect(page.locator('body')).toContainText('한국어 본문.', { timeout: 10000 });
+  await expect.poll(() => page.evaluate((key) => localStorage.getItem(key), langStorageKey)).toBe('ko');
+
+  expect(pageErrors).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+test('shell LANG controls bundle default routes', async ({ page }) => {
+  installBundleArticleFixture();
+  const { pageErrors, consoleErrors } = await collectBrowserErrors(page);
+
+  await page.goto(`${baseUrl}/#/websh`, { waitUntil: 'networkidle' });
+  await expect(page.locator('body')).toContainText('guest@wonjae.eth:~', { timeout: 10000 });
+  await runCommand(page, 'export LANG=ko');
+  await expect.poll(() => page.evaluate((key) => localStorage.getItem(key), langStorageKey)).toBe('ko');
+
+  await page.goto(`${baseUrl}/#/writing/foo`, { waitUntil: 'networkidle' });
+  await expect(page.locator('body')).toContainText('한국어 본문.', { timeout: 10000 });
+
+  expect(pageErrors).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
 test('root content renders before external mount scan resolves', async ({ page }) => {
   let releaseDbManifest;
   const dbManifestGate = new Promise((resolve) => {
@@ -794,21 +1212,34 @@ test('math markdown lazy-loads KaTeX once', async ({ page }) => {
 });
 
 test('attested renderer page shows the route sigchip', async ({ page }) => {
+  const bundle = {
+    default_variant: 'en',
+    variants: [
+      { id: 'en', path: 'en.md', label: 'English', locale: 'en' },
+      { id: 'ko', path: 'ko.md', label: '한국어', locale: 'ko' }
+    ]
+  };
   const manifest = manifestDocument([
     ...siteManifest.entries,
     dirEntry('writing', 'writing'),
-    fileEntry('.websh/ledger.json', 'ledger', { kind: 'data' }),
-    fileEntry('writing/content-backed-homepage.md', 'content-backed homepage')
+    bundleEntry('writing/zk-proofs-from-a-compiler-perspective', 'Zero-Knowledge Proofs, from a Compiler Perspective', {
+      date: '2026-05-15',
+      tags: ['zk'],
+      bundle
+    }),
+    fileEntry('writing/zk-proofs-from-a-compiler-perspective/en.md', 'Zero-Knowledge Proofs, from a Compiler Perspective'),
+    fileEntry('writing/zk-proofs-from-a-compiler-perspective/ko.md', '컴파일러 관점에서 보는 영지식 증명')
   ]);
   rawResponses.set('/content/manifest.json', JSON.stringify(manifest));
-  rawResponses.set('/content/writing/content-backed-homepage.md', '# content-backed homepage');
+  rawResponses.set('/content/writing/zk-proofs-from-a-compiler-perspective/en.md', '# Zero-Knowledge Proofs\n\ncontent-backed bundle');
+  rawResponses.set('/content/writing/zk-proofs-from-a-compiler-perspective/ko.md', '# 컴파일러 관점에서 보는 영지식 증명');
 
   const { pageErrors, consoleErrors } = await collectBrowserErrors(page);
-  await page.goto(`${baseUrl}/#/writing/content-backed-homepage`, { waitUntil: 'networkidle' });
+  await page.goto(`${baseUrl}/#/writing/zk-proofs-from-a-compiler-perspective`, { waitUntil: 'networkidle' });
   const sigchip = page.getByRole('button', { name: 'Signature of this page' });
   await expect(sigchip).toBeVisible({ timeout: 10000 });
   await sigchip.click();
-  await expect(page.locator('body')).toContainText('/writing/content-backed-homepage');
+  await expect(page.locator('body')).toContainText('/writing/zk-proofs-from-a-compiler-perspective');
   await expect(page.locator('body')).toContainText('OpenPGP');
 
   expect(pageErrors).toEqual([]);

@@ -10,6 +10,7 @@ use wasm_bindgen_futures::JsFuture;
 
 use crate::config::WALLET_TIMEOUT_MS;
 use crate::platform::fetch::{RaceResult, fetch_json, race_with_timeout};
+use crate::platform::js_value_message;
 
 use super::state::EnvironmentError;
 
@@ -54,7 +55,7 @@ async fn ethereum_request(method: &str) -> Result<JsValue, WalletError> {
 
     JsFuture::from(promise)
         .await
-        .map_err(|e| WalletError::RequestRejected(format!("{e:?}")))
+        .map_err(|error| WalletError::RequestRejected(js_value_message(&error)))
 }
 
 pub fn is_available() -> bool {

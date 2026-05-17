@@ -13,7 +13,7 @@ mod state;
 pub use boot::{
     assemble_global_fs, bootstrap_global_fs, bootstrap_runtime_mount, seed_bootstrap_routes,
 };
-pub use commit::commit_backend;
+pub use commit::{CommitError, CommitPrepareError, CommitResult, commit_backend};
 pub use state::RuntimeStateSnapshot;
 
 pub fn build_content_view_global_fs(base: &GlobalFs, changes: &ChangeSet) -> GlobalFs {
@@ -45,6 +45,7 @@ fn populate_runtime_state(
     let dir = |title: &str| NodeMetadata {
         schema: SCHEMA_VERSION,
         kind: NodeKind::Directory,
+        bundle: None,
         authored: Fields {
             title: Some(title.to_string()),
             ..Fields::default()
@@ -54,6 +55,7 @@ fn populate_runtime_state(
     let data_file = || NodeMetadata {
         schema: SCHEMA_VERSION,
         kind: NodeKind::Data,
+        bundle: None,
         authored: Fields::default(),
         derived: Fields::default(),
     };

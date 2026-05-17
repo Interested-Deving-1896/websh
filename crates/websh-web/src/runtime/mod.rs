@@ -5,6 +5,7 @@
 
 pub(crate) mod content_cache;
 pub(crate) mod drafts;
+mod error;
 pub(crate) mod github_backend;
 pub(crate) mod idb;
 pub(crate) mod loader;
@@ -14,6 +15,7 @@ pub(crate) mod storage_state;
 mod system;
 pub(crate) mod wallet;
 
+pub use error::RuntimeLoadError;
 pub use loader::RuntimeLoad;
 pub use mounts::{MountEntry, MountLoadSet, MountLoadStatus, MountScanJob, MountScanResult};
 pub use state::EnvironmentError;

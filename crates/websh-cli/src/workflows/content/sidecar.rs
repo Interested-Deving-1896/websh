@@ -1,9 +1,14 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use anyhow::{Context, anyhow, bail};
 use sha2::{Digest, Sha256};
 
-use websh_core::domain::{Fields, NodeKind, NodeMetadata, RendererKind, SCHEMA_VERSION};
+use websh_core::domain::{
+    Fields, NodeKind, NodeMetadata, RendererKind, SCHEMA_VERSION,
+    validate_bundle_metadata_with_targets,
+};
+use websh_core::ports::ManifestSnapshotError;
 
 use crate::CliResult;
 use crate::infra::json::write_json;
@@ -22,8 +27,9 @@ pub(crate) fn sync_file_sidecar(
     file_path: &Path,
     rel_path: &str,
 ) -> CliResult {
-    let metadata = fs::metadata(file_path)?;
-    let bytes = fs::read(file_path)?;
+    let metadata = fs::metadata(file_path)
+        .with_context(|| format!("read metadata {}", file_path.display()))?;
+    let bytes = fs::read(file_path).with_context(|| format!("read {}", file_path.display()))?;
 
     let kind = kind_for_content_path(rel_path);
     let mut derived = derived_for_path(file_path, rel_path, &bytes)?;
@@ -63,6 +69,7 @@ pub(crate) fn sync_file_sidecar(
     let new_meta = NodeMetadata {
         schema: SCHEMA_VERSION,
         kind,
+        bundle: None,
         authored,
         derived,
     };
@@ -83,9 +90,46 @@ pub(crate) fn sync_directory_sidecar(content_root: &Path, dir_rel: &str) -> CliR
     // non-byte-stable across consecutive sync runs (and would invalidate
     // attestations that signed the previous canonical content). The
     // `child_count` field is the cheap "did membership change" indicator.
+    let directory_kind = match existing.as_ref().map(|metadata| metadata.kind) {
+        Some(kind) if kind.is_directory_like() => kind,
+        Some(kind) => {
+            bail!("directory sidecar {dir_rel} has non-directory top-level kind `{kind:?}`");
+        }
+        None => NodeKind::Directory,
+    };
+    if existing
+        .as_ref()
+        .is_some_and(|metadata| metadata.bundle.is_some() && directory_kind != NodeKind::Bundle)
+    {
+        bail!("directory {dir_rel} has bundle metadata but kind is not `bundle`");
+    }
+
+    let bundle = if directory_kind == NodeKind::Bundle {
+        let bundle = existing
+            .as_ref()
+            .and_then(|metadata| metadata.bundle.clone())
+            .ok_or_else(|| {
+                anyhow!("bundle directory {dir_rel} requires a bundle metadata block")
+            })?;
+        validate_bundle_metadata_with_targets(dir_rel, &bundle, |variant| {
+            let target = dir_path.join(&variant.path);
+            if !target.is_file() {
+                return Err(ManifestSnapshotError::MissingBundleVariantTarget {
+                    bundle_path: dir_rel.to_string(),
+                    variant_id: variant.id.clone(),
+                    path: variant.path.clone(),
+                });
+            }
+            Ok(())
+        })?;
+        Some(bundle)
+    } else {
+        None
+    };
+
     let derived = Fields {
         title: Some(dir_title_fallback(dir_rel)),
-        kind: Some(NodeKind::Directory),
+        kind: Some(directory_kind),
         child_count: Some(count_children(&dir_path)?),
         ..Fields::default()
     };
@@ -97,7 +141,8 @@ pub(crate) fn sync_directory_sidecar(content_root: &Path, dir_rel: &str) -> CliR
 
     let new_meta = NodeMetadata {
         schema: SCHEMA_VERSION,
-        kind: NodeKind::Directory,
+        kind: directory_kind,
+        bundle,
         authored,
         derived,
     };
@@ -122,9 +167,10 @@ fn read_sidecar_metadata(sidecar_path: &Path) -> CliResult<Option<NodeMetadata>>
     if !sidecar_path.exists() {
         return Ok(None);
     }
-    let body = fs::read_to_string(sidecar_path)?;
-    let metadata: NodeMetadata = serde_json::from_str(&body)
-        .map_err(|err| format!("parse {}: {err}", sidecar_path.display()))?;
+    let body = fs::read_to_string(sidecar_path)
+        .with_context(|| format!("read {}", sidecar_path.display()))?;
+    let metadata: NodeMetadata =
+        serde_json::from_str(&body).with_context(|| format!("parse {}", sidecar_path.display()))?;
     Ok(Some(metadata))
 }
 
@@ -148,8 +194,8 @@ fn directory_sidecar_path_for(content_root: &Path, dir_rel: &str) -> PathBuf {
 
 fn count_children(dir: &Path) -> CliResult<u32> {
     let mut count = 0u32;
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
+    for entry in fs::read_dir(dir).with_context(|| format!("read directory {}", dir.display()))? {
+        let entry = entry.with_context(|| format!("read directory entry in {}", dir.display()))?;
         let name = entry.file_name();
         let name = name.to_string_lossy();
         // Filter list mirrors `should_skip_content_file` so the count
@@ -180,6 +226,7 @@ pub(crate) fn default_file_metadata(file_path: &Path, rel_path: &str) -> NodeMet
     NodeMetadata {
         schema: SCHEMA_VERSION,
         kind,
+        bundle: None,
         authored: Fields::default(),
         derived: Fields {
             title: Some(fallback_file_title(rel_path)),
@@ -195,6 +242,7 @@ pub(crate) fn default_directory_metadata(dir_rel: &str) -> NodeMetadata {
     NodeMetadata {
         schema: SCHEMA_VERSION,
         kind: NodeKind::Directory,
+        bundle: None,
         authored: Fields::default(),
         derived: Fields {
             title: Some(dir_title_fallback(dir_rel)),
@@ -219,6 +267,7 @@ fn default_renderer_for_kind(kind: NodeKind, rel_path: &str) -> Option<RendererK
         (NodeKind::Redirect, _) => Some(RendererKind::Redirect),
         (NodeKind::App, _) => Some(RendererKind::TerminalApp),
         (NodeKind::Directory, _) => Some(RendererKind::DirectoryListing),
+        (NodeKind::Bundle, _) => None,
         _ => None,
     }
 }

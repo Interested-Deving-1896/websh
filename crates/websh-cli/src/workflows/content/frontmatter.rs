@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 
+use anyhow::Context;
 use websh_core::domain::{Fields, NodeMetadata};
 
 use crate::CliResult;
@@ -18,9 +19,11 @@ pub(crate) fn merge_authored(prior: Fields, frontmatter: Fields) -> Fields {
         kind: frontmatter.kind.or(prior.kind),
         renderer: frontmatter.renderer.or(prior.renderer),
         route: frontmatter.route.or(prior.route),
+        language: frontmatter.language.or(prior.language),
         description: frontmatter.description.or(prior.description),
         date: frontmatter.date.or(prior.date),
         tags: frontmatter.tags.or(prior.tags),
+        links: frontmatter.links.or(prior.links),
         icon: frontmatter.icon.or(prior.icon),
         thumbnail: frontmatter.thumbnail.or(prior.thumbnail),
         sort: frontmatter.sort.or(prior.sort),
@@ -95,7 +98,7 @@ pub(crate) fn parse_yaml_frontmatter(body: &str) -> CliResult<Option<Fields>> {
 }
 
 fn parse_frontmatter_fields(yaml: &str) -> CliResult<Fields> {
-    serde_norway::from_str(yaml).map_err(|err| format!("frontmatter YAML parse: {err}").into())
+    serde_norway::from_str(yaml).context("frontmatter YAML parse")
 }
 
 pub(crate) fn strip_yaml_frontmatter(body: &str) -> &str {
@@ -150,6 +153,10 @@ date: 2026-05-03
 tags:
   - rust
   - yaml
+links:
+  - label: Paper
+    url: https://eprint.iacr.org/2026/001
+    kind: paper
 trust: trusted
 access:
   recipients:
@@ -177,6 +184,11 @@ page_size:
             fields.tags.as_deref(),
             Some(["rust".to_string(), "yaml".to_string()].as_slice())
         );
+        let links = fields.links.as_deref().expect("links parsed");
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].label, "Paper");
+        assert_eq!(links[0].url, "https://eprint.iacr.org/2026/001");
+        assert_eq!(links[0].kind.as_deref(), Some("paper"));
         assert_eq!(fields.trust, Some(TrustLevel::Trusted));
         assert_eq!(
             fields
@@ -206,6 +218,7 @@ page_size:
         let err = parse_yaml_frontmatter("---\nunknown: value\n---\n")
             .expect_err("unknown fields are rejected");
 
-        assert!(err.to_string().starts_with("frontmatter YAML parse:"));
+        assert_eq!(err.to_string(), "frontmatter YAML parse");
+        assert!(format!("{err:#}").contains("unknown field"));
     }
 }

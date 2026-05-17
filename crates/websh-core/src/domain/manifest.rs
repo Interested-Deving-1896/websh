@@ -5,12 +5,11 @@
 use serde::{Deserialize, Serialize};
 
 use super::mempool::MempoolFields;
-use super::node_metadata::NodeMetadata;
+use super::metadata::NodeMetadata;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContentManifestDocument {
-    #[serde(default)]
     pub entries: Vec<ContentManifestEntry>,
 }
 
@@ -21,7 +20,7 @@ pub struct ContentManifestDocument {
 pub struct ContentManifestEntry {
     pub path: String,
     pub metadata: NodeMetadata,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mempool: Option<MempoolFields>,
 }
 
@@ -35,5 +34,11 @@ mod tests {
         let manifest: ContentManifestDocument = serde_json::from_str(body).expect("parse");
         let encoded = serde_json::to_string_pretty(&manifest).expect("serialize");
         assert_eq!(encoded.trim_end(), body.trim_end());
+    }
+
+    #[test]
+    fn content_manifest_requires_entries() {
+        let parsed = serde_json::from_str::<ContentManifestDocument>("{}");
+        assert!(parsed.is_err());
     }
 }

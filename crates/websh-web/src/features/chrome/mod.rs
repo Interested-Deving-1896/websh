@@ -130,7 +130,7 @@ pub fn SiteChromeIdentity(label: &'static str, href: Signal<String>) -> impl Int
 #[component]
 pub fn SiteChromeLead(children: Children) -> impl IntoView {
     view! {
-        <div class=css::lead>{children()}</div>
+        <div class=css::lead data-chrome-role="lead">{children()}</div>
     }
 }
 
@@ -140,39 +140,8 @@ pub fn SiteChromeBreadcrumb(
     #[prop(optional, default = "path")] aria_label: &'static str,
 ) -> impl IntoView {
     view! {
-        <nav class=css::breadcrumb aria-label=aria_label>
-            {move || {
-                items
-                    .get()
-                    .into_iter()
-                    .enumerate()
-                    .map(|(idx, item)| {
-                        let separator = (idx > 0).then(|| view! {
-                            <span class=css::separator aria-hidden="true">"/"</span>
-                        });
-                        let class_name = if item.current {
-                            css::crumbCurrent.to_string()
-                        } else {
-                            css::crumb.to_string()
-                        };
-
-                        view! {
-                            <>
-                                {separator}
-                                {if let Some(href) = item.href {
-                                    view! {
-                                        <a href=href class=class_name>{item.label}</a>
-                                    }.into_any()
-                                } else {
-                                    view! {
-                                        <span class=class_name aria-current="location">{item.label}</span>
-                                    }.into_any()
-                                }}
-                            </>
-                        }
-                    })
-                    .collect_view()
-            }}
+        <nav class=css::breadcrumb aria-label=aria_label data-chrome-role="breadcrumb">
+            {move || render_site_chrome_breadcrumb_items(items.get())}
         </nav>
     }
 }
@@ -180,14 +149,59 @@ pub fn SiteChromeBreadcrumb(
 #[component]
 pub fn SiteChromeActions(children: Children) -> impl IntoView {
     view! {
-        <div class=css::actions>{children()}</div>
+        <div class=css::actions data-chrome-role="actions">{children()}</div>
     }
 }
 
 #[component]
 pub fn SiteChromeNav(children: Children) -> impl IntoView {
     view! {
-        <nav class=css::nav aria-label="site navigation">{children()}</nav>
+        <nav class=css::nav aria-label="site navigation" data-chrome-role="nav">{children()}</nav>
+    }
+}
+
+fn render_site_chrome_breadcrumb_items(items: Vec<SiteChromeBreadcrumbItem>) -> impl IntoView {
+    items
+        .into_iter()
+        .enumerate()
+        .map(move |(idx, item)| {
+            let separator = (idx > 0).then(|| {
+                view! {
+                    <span class=css::separator aria-hidden="true">"/"</span>
+                }
+            });
+
+            view! {
+                <>
+                    {separator}
+                    {render_site_chrome_breadcrumb_item(item)}
+                </>
+            }
+        })
+        .collect_view()
+}
+
+fn render_site_chrome_breadcrumb_item(item: SiteChromeBreadcrumbItem) -> AnyView {
+    let is_current = item.current || item.href.is_none();
+    if is_current {
+        view! {
+            <span class=css::crumbCurrent aria-current="location" data-breadcrumb-current="true">
+                {item.label}
+            </span>
+        }
+        .into_any()
+    } else if let Some(href) = item.href {
+        view! {
+            <a href=href class=css::crumb>{item.label}</a>
+        }
+        .into_any()
+    } else {
+        view! {
+            <span class=css::crumbCurrent aria-current="location" data-breadcrumb-current="true">
+                {item.label}
+            </span>
+        }
+        .into_any()
     }
 }
 
@@ -431,7 +445,7 @@ pub fn SiteChromePalettePicker(theme: RwSignal<&'static str>) -> impl IntoView {
     };
 
     view! {
-        <div class=css::themePicker>
+        <div class=css::themePicker data-chrome-role="theme">
             <button
                 class=css::paletteTrigger
                 type="button"
@@ -502,7 +516,10 @@ fn route_breadcrumb_items(frame: &RouteFrame) -> Vec<SiteChromeBreadcrumbItem> {
 
 fn content_breadcrumb_items(frame: &RouteFrame) -> Vec<SiteChromeBreadcrumbItem> {
     if frame.request.url_path == "/ledger" {
-        return canonical_breadcrumb_items(&VirtualPath::root(), RouteSurface::Content, None);
+        return vec![
+            SiteChromeBreadcrumbItem::link("~", HOME_HREF),
+            SiteChromeBreadcrumbItem::current("ledger"),
+        ];
     }
 
     let path = VirtualPath::from_absolute(frame.request.url_path.clone()).unwrap_or_else(|_| {

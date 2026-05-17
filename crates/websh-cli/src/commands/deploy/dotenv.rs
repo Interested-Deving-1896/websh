@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::Path;
 
+use anyhow::Context;
+
 use crate::CliResult;
 
 pub(super) fn load_dotenv(root: &Path) -> CliResult<Vec<(String, String)>> {
@@ -9,7 +11,7 @@ pub(super) fn load_dotenv(root: &Path) -> CliResult<Vec<(String, String)>> {
         return Ok(Vec::new());
     }
 
-    let body = fs::read_to_string(&path)?;
+    let body = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
     Ok(parse_dotenv(&body))
 }
 

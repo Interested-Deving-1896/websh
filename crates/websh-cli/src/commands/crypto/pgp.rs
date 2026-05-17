@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use anyhow::bail;
 use clap::{Args, Subcommand};
 
 use websh_core::crypto::pgp::{
@@ -45,11 +46,11 @@ pub(crate) fn verify_identity(root: &Path) -> CliResult {
     let parsed = parse_key(&root.join(&identity.pgp.key_path))?;
     let expected = normalize_fingerprint(&identity.pgp.fingerprint);
     if parsed.fingerprint != expected {
-        return Err(format!(
+        bail!(
             "PGP fingerprint mismatch: expected {}, got {}",
-            expected, parsed.fingerprint
-        )
-        .into());
+            expected,
+            parsed.fingerprint
+        );
     }
     Ok(())
 }

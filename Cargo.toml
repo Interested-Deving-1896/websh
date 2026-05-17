@@ -32,6 +32,7 @@ toml = "1"
 unicode-normalization = "0.1"
 
 # Native CLI and build-time tooling.
+anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 imagesize = { version = "0.14", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
 lopdf = "0.40"

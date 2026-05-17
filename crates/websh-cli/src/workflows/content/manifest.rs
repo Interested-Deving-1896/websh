@@ -1,7 +1,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use anyhow::Context;
 use websh_core::domain::{ContentManifestDocument, ContentManifestEntry};
+use websh_core::ports::parse_manifest_snapshot;
 
 use crate::CliResult;
 use crate::infra::json::write_json;
@@ -30,7 +32,8 @@ pub(crate) const DEFAULT_CONTENT_DIR: &str = "content";
 /// [`build_manifest_from_sidecars`] for the projection-only path.
 pub(crate) fn sync_content(root: &Path, content_dir: &Path) -> CliResult<ContentManifestDocument> {
     let content_root = resolve_path(root, content_dir);
-    fs::create_dir_all(&content_root)?;
+    fs::create_dir_all(&content_root)
+        .with_context(|| format!("create directory {}", content_root.display()))?;
 
     let mut all_files = Vec::new();
     collect_files_recursive(&content_root, &mut all_files)?;
@@ -70,7 +73,8 @@ pub(crate) fn build_manifest_from_sidecars(
     content_dir: &Path,
 ) -> CliResult<ContentManifestDocument> {
     let content_root = resolve_path(root, content_dir);
-    fs::create_dir_all(&content_root)?;
+    fs::create_dir_all(&content_root)
+        .with_context(|| format!("create directory {}", content_root.display()))?;
 
     let mut all_files = Vec::new();
     collect_files_recursive(&content_root, &mut all_files)?;
@@ -120,8 +124,15 @@ fn bundle_manifest(
     entries.extend(file_entries);
 
     let manifest = ContentManifestDocument { entries };
+    validate_manifest(&manifest)?;
     write_json(&content_root.join(CONTENT_MANIFEST_FILE), &manifest)?;
     Ok(manifest)
+}
+
+fn validate_manifest(manifest: &ContentManifestDocument) -> CliResult {
+    let body = serde_json::to_string(manifest).context("serialize manifest for validation")?;
+    parse_manifest_snapshot(&body)?;
+    Ok(())
 }
 
 fn content_parent_dirs(rel_path: &str) -> Vec<String> {
@@ -157,7 +168,8 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};
     use websh_core::domain::{
-        AccessFilter, Fields, NodeKind, NodeMetadata, Recipient, SCHEMA_VERSION,
+        AccessFilter, BundleValidationError, Fields, NodeKind, NodeMetadata, Recipient,
+        SCHEMA_VERSION,
     };
 
     fn tempdir() -> PathBuf {
@@ -235,6 +247,7 @@ mod tests {
         let prior = NodeMetadata {
             schema: SCHEMA_VERSION,
             kind: NodeKind::Page,
+            bundle: None,
             authored: Fields {
                 access: Some(AccessFilter {
                     recipients: vec![Recipient {
@@ -261,5 +274,39 @@ mod tests {
         let access = after.authored.access.expect("access preserved");
         assert_eq!(access.recipients.len(), 1);
         assert_eq!(access.recipients[0].address, "0xabc");
+    }
+
+    #[test]
+    fn rejects_bundle_route_collisions_during_manifest_sync() {
+        let dir = tempdir();
+        fs::create_dir_all(dir.join("writing/foo")).unwrap();
+        fs::write(
+            dir.join("writing/foo/_index.dir.json"),
+            r#"{
+              "schema":1,
+              "kind":"bundle",
+              "bundle":{
+                "default_variant":"en",
+                "variants":[{"id":"en","path":"en.md","label":"English"}]
+              },
+              "authored":{"title":"Foo"},
+              "derived":{"kind":"bundle"}
+            }"#,
+        )
+        .unwrap();
+        fs::write(dir.join("writing/foo/en.md"), b"english").unwrap();
+        fs::write(dir.join("writing/foo.md"), b"collision").unwrap();
+
+        let err = sync_content(&dir, Path::new(".")).unwrap_err();
+        let manifest_error = err
+            .downcast_ref::<websh_core::ports::ManifestSnapshotError>()
+            .expect("bundle route collision error");
+        assert!(matches!(
+            manifest_error,
+            websh_core::ports::ManifestSnapshotError::Bundle(
+                BundleValidationError::RootRouteCollision { file_path, .. }
+            )
+                if file_path == "writing/foo.md"
+        ));
     }
 }

@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "kind": "bundle",
+  "bundle": {
+    "default_variant": "en",
+    "variants": [
+      {
+        "id": "en",
+        "path": "en.md",
+        "label": "English",
+        "locale": "en"
+      },
+      {
+        "id": "ko",
+        "path": "ko.md",
+        "label": "한국어",
+        "locale": "ko"
+      }
+    ]
+  },
+  "authored": {
+    "title": "ZK Summit 14 Review: Talks, Themes, and Takeaways",
+    "description": "A program-level review of ZK Summit 14, covering talks, themes, and takeaways.",
+    "date": "2026-05-18",
+    "tags": [
+      "zk",
+      "zksummit",
+      "event"
+    ],
+    "links": [
+      {
+        "label": "event page",
+        "url": "https://www.zksummit.com/",
+        "kind": "event"
+      },
+      {
+        "label": "Ethereum Collective Korea",
+        "url": "https://t.me/thetickeriseth/1403",
+        "kind": "telegram"
+      }
+    ]
+  },
+  "derived": {
+    "title": "zksummit14-review",
+    "kind": "bundle",
+    "child_count": 2
+  }
+}

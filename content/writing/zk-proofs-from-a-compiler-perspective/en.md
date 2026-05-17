@@ -1,8 +1,9 @@
 ---
 title: "Zero-Knowledge Proofs, from a Compiler Perspective"
 date: "2026-05-15"
-tags: [zk, compilers, zero-knowledge, systems]
+tags: [zk, compilers, systems]
 description: "How programs become relations, constraints, traces, and proofs."
+language: en
 ---
 
 # Zero-Knowledge Proofs, from a Compiler Perspective

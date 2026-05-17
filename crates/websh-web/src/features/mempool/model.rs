@@ -184,6 +184,7 @@ mod tests {
             meta: NodeMetadata {
                 schema: SCHEMA_VERSION,
                 kind: NodeKind::Page,
+                bundle: None,
                 authored: Fields {
                     title: Some(title.to_string()),
                     date: date.map(str::to_string),

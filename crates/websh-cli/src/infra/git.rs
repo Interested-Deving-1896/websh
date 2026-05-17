@@ -1,6 +1,8 @@
 use std::path::Path;
 use std::process::Command;
 
+use anyhow::Context;
+
 use crate::CliResult;
 
 pub(crate) struct GitOutput {
@@ -14,7 +16,11 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<std::ffi::OsStr>,
 {
-    let output = Command::new("git").current_dir(root).args(args).output()?;
+    let output = Command::new("git")
+        .current_dir(root)
+        .args(args)
+        .output()
+        .with_context(|| format!("run git in {}", root.display()))?;
     Ok(GitOutput {
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
@@ -30,7 +36,8 @@ where
     Ok(Command::new("git")
         .current_dir(root)
         .args(args)
-        .status()?
+        .status()
+        .with_context(|| format!("run git in {}", root.display()))?
         .success())
 }
 

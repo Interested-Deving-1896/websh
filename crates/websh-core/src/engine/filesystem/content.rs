@@ -12,10 +12,13 @@ pub type BackendRegistry = BTreeMap<VirtualPath, StorageBackendRef>;
 /// Target-neutral content read errors for backend-backed file reads.
 #[derive(Debug, Clone, Error)]
 pub enum ContentReadError {
-    #[error("no backend for {0}")]
-    NoBackend(String),
-    #[error("path outside backend root: {0}")]
-    PathOutsideBackendRoot(String),
+    #[error("no backend for {path}")]
+    NoBackend { path: VirtualPath },
+    #[error("path {path} is outside backend root {root}")]
+    PathOutsideBackendRoot {
+        path: VirtualPath,
+        root: VirtualPath,
+    },
     #[error(transparent)]
     Storage(#[from] StorageError),
 }
@@ -30,9 +33,13 @@ pub async fn read_text(
     }
 
     let (root, backend) = backend_for_path(backends, path)
-        .ok_or_else(|| ContentReadError::NoBackend(path.to_string()))?;
-    let rel_path = relative_backend_path(path, &root)
-        .ok_or_else(|| ContentReadError::PathOutsideBackendRoot(path.to_string()))?;
+        .ok_or_else(|| ContentReadError::NoBackend { path: path.clone() })?;
+    let rel_path = relative_backend_path(path, &root).ok_or_else(|| {
+        ContentReadError::PathOutsideBackendRoot {
+            path: path.clone(),
+            root: root.clone(),
+        }
+    })?;
 
     backend.read_text(&rel_path).await.map_err(Into::into)
 }
@@ -47,9 +54,13 @@ pub async fn read_bytes(
     }
 
     let (root, backend) = backend_for_path(backends, path)
-        .ok_or_else(|| ContentReadError::NoBackend(path.to_string()))?;
-    let rel_path = relative_backend_path(path, &root)
-        .ok_or_else(|| ContentReadError::PathOutsideBackendRoot(path.to_string()))?;
+        .ok_or_else(|| ContentReadError::NoBackend { path: path.clone() })?;
+    let rel_path = relative_backend_path(path, &root).ok_or_else(|| {
+        ContentReadError::PathOutsideBackendRoot {
+            path: path.clone(),
+            root: root.clone(),
+        }
+    })?;
 
     backend.read_bytes(&rel_path).await.map_err(Into::into)
 }
@@ -64,9 +75,13 @@ pub fn public_read_url(
     }
 
     let (root, backend) = backend_for_path(backends, path)
-        .ok_or_else(|| ContentReadError::NoBackend(path.to_string()))?;
-    let rel_path = relative_backend_path(path, &root)
-        .ok_or_else(|| ContentReadError::PathOutsideBackendRoot(path.to_string()))?;
+        .ok_or_else(|| ContentReadError::NoBackend { path: path.clone() })?;
+    let rel_path = relative_backend_path(path, &root).ok_or_else(|| {
+        ContentReadError::PathOutsideBackendRoot {
+            path: path.clone(),
+            root: root.clone(),
+        }
+    })?;
 
     backend.public_read_url(&rel_path).map_err(Into::into)
 }
@@ -154,9 +169,9 @@ mod tests {
             crate::ports::StorageResult<crate::ports::CommitOutcome>,
         > {
             Box::pin(async {
-                Err(crate::ports::StorageError::BadRequest(
-                    "commit unused".to_string(),
-                ))
+                Err(crate::ports::StorageError::InvalidRequest {
+                    message: "commit unused".to_string(),
+                })
             })
         }
     }
@@ -171,6 +186,7 @@ mod tests {
             NodeMetadata {
                 schema: SCHEMA_VERSION,
                 kind: NodeKind::Data,
+                bundle: None,
                 authored: Fields::default(),
                 derived: Fields::default(),
             },
@@ -200,6 +216,7 @@ mod tests {
             NodeMetadata {
                 schema: SCHEMA_VERSION,
                 kind: NodeKind::Page,
+                bundle: None,
                 authored: Fields::default(),
                 derived: Fields::default(),
             },
@@ -263,6 +280,7 @@ mod tests {
             NodeMetadata {
                 schema: SCHEMA_VERSION,
                 kind: NodeKind::Page,
+                bundle: None,
                 authored: Fields::default(),
                 derived: Fields::default(),
             },

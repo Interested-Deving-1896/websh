@@ -112,8 +112,7 @@ pub fn Breadcrumb(
                                         <ic::SvgIcon icon=ic::CHEVRON_RIGHT />
                                     </span>
                                 })}
-                                {if seg.target.is_some() {
-                                    let target = seg.target.clone().unwrap();
+                                {if let Some(target) = seg.target.clone() {
                                     view! {
                                         <SegmentLink
                                             icon=seg.icon

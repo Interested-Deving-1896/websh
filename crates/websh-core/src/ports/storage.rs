@@ -7,54 +7,60 @@
 //! execution should wrap it at the adapter boundary rather than assuming this
 //! core port is thread-safe.
 
-use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::rc::Rc;
 
 use crate::domain::{EntryExtensions, NodeMetadata, VirtualPath};
 
+use super::ManifestSnapshotError;
+
 pub type StorageResult<T> = Result<T, StorageError>;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum StorageError {
+    #[error("token invalid or lacks permission")]
     AuthFailed,
-    Conflict { remote_head: String },
-    NotFound(String),
-    ValidationFailed(String),
+    #[error("remote changed; run `sync refresh`{}", conflict_suffix(remote_head))]
+    Conflict { remote_head: Option<String> },
+    #[error("path not found on remote: {path}")]
+    NotFound { path: String },
+    #[error("remote rejected request: {message}")]
+    RemoteRejected { message: String },
+    #[error("rate limited{}", rate_limit_suffix(retry_after))]
     RateLimited { retry_after: Option<u64> },
-    ServerError(u16),
-    NetworkError(String),
-    NoToken,
-    BadRequest(String),
+    #[error("remote server error: http {status}")]
+    Server { status: u16 },
+    #[error("network error: {message}")]
+    Network { message: String },
+    #[error("missing GitHub token")]
+    MissingToken,
+    #[error("invalid storage request: {message}")]
+    InvalidRequest { message: String },
+    #[error("invalid manifest snapshot: {message}")]
+    InvalidSnapshot { message: String },
 }
 
-// Two variants (Conflict / RateLimited) format dynamically: Conflict truncates
-// the remote head and RateLimited switches on the retry-after duration.
-impl fmt::Display for StorageError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::AuthFailed => write!(f, "token invalid or lacks permission"),
-            Self::Conflict { remote_head } => write!(
-                f,
-                "remote changed (now {}). run 'sync refresh'",
-                &remote_head[..remote_head.len().min(8)]
-            ),
-            Self::NotFound(p) => write!(f, "path not found on remote: {p}"),
-            Self::ValidationFailed(m) => write!(f, "rejected by remote: {m}"),
-            Self::RateLimited {
-                retry_after: Some(n),
-            } => write!(f, "rate limited. try again in {n}s"),
-            Self::RateLimited { retry_after: None } => write!(f, "rate limited"),
-            Self::ServerError(c) => write!(f, "remote server error (HTTP {c})"),
-            Self::NetworkError(m) => write!(f, "network error: {m}"),
-            Self::NoToken => write!(f, "no GitHub token. run 'sync auth set <token>'"),
-            Self::BadRequest(m) => write!(f, "bad request: {m}"),
+fn conflict_suffix(remote_head: &Option<String>) -> String {
+    remote_head
+        .as_ref()
+        .map(|head| format!(" (remote head: {head})"))
+        .unwrap_or_default()
+}
+
+fn rate_limit_suffix(retry_after: &Option<u64>) -> String {
+    retry_after
+        .map(|seconds| format!("; retry after {seconds}s"))
+        .unwrap_or_default()
+}
+
+impl From<ManifestSnapshotError> for StorageError {
+    fn from(source: ManifestSnapshotError) -> Self {
+        Self::InvalidSnapshot {
+            message: source.to_string(),
         }
     }
 }
-
-impl std::error::Error for StorageError {}
 
 pub type LocalBoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
 pub type StorageBackendRef = Rc<dyn StorageBackend>;
@@ -153,4 +159,30 @@ pub trait StorageBackend {
         &'a self,
         request: &'a CommitRequest,
     ) -> LocalBoxFuture<'a, StorageResult<CommitOutcome>>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn conflict_display_includes_remote_head_when_present() {
+        let error = StorageError::Conflict {
+            remote_head: Some("abc123".to_string()),
+        };
+
+        assert_eq!(
+            error.to_string(),
+            "remote changed; run `sync refresh` (remote head: abc123)"
+        );
+    }
+
+    #[test]
+    fn rate_limited_display_includes_retry_after_when_present() {
+        let error = StorageError::RateLimited {
+            retry_after: Some(30),
+        };
+
+        assert_eq!(error.to_string(), "rate limited; retry after 30s");
+    }
 }

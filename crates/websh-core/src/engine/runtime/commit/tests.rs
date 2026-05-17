@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use crate::domain::{ChangeType, EntryExtensions, Fields, NodeKind, NodeMetadata, SCHEMA_VERSION};
 use crate::ports::{
     CommitBase, CommitRequest, LocalBoxFuture, ScannedFile, ScannedSubtree, StorageBackend,
-    StorageBackendRef, StorageError, StorageResult,
+    StorageBackendRef, StorageResult,
 };
 
 use super::*;
@@ -13,6 +13,7 @@ fn blank_meta() -> NodeMetadata {
     NodeMetadata {
         schema: SCHEMA_VERSION,
         kind: NodeKind::Page,
+        bundle: None,
         authored: Fields::default(),
         derived: Fields::default(),
     }
@@ -181,7 +182,11 @@ async fn prepared_commit_rejects_binary_changes_until_storage_supports_them() {
     .await
     .unwrap_err();
 
-    assert!(matches!(err, StorageError::BadRequest(message) if message.contains("binary change")));
+    assert!(matches!(
+        err,
+        CommitError::Prepare(CommitPrepareError::UnsupportedBinaryChange { path })
+            if path.as_str() == "/asset.bin"
+    ));
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -258,7 +263,11 @@ async fn prepared_commit_rejects_staged_changes_outside_mount_root() {
     .await
     .expect_err("commit preparation must reject cross-mount staged changes");
 
-    assert!(matches!(error, StorageError::BadRequest(_)));
+    assert!(matches!(
+        error,
+        CommitError::Prepare(CommitPrepareError::StagedPathOutsideMount { path, mount_root })
+            if path.as_str() == "/other/new.md" && mount_root.as_str() == "/db"
+    ));
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -289,7 +298,8 @@ async fn prepared_commit_rejects_deleting_commit_root() {
 
     assert!(matches!(
         error,
-        StorageError::BadRequest(message) if message.contains("cannot delete commit root")
+        CommitError::Prepare(CommitPrepareError::DeleteCommitRoot { mount_root })
+            if mount_root.as_str() == "/db"
     ));
 }
 
@@ -425,6 +435,7 @@ fn meta_with_title(title: &str) -> NodeMetadata {
     NodeMetadata {
         schema: SCHEMA_VERSION,
         kind: NodeKind::Page,
+        bundle: None,
         authored: Fields {
             title: Some(title.to_string()),
             ..Fields::default()

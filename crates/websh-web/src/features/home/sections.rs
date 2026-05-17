@@ -38,6 +38,14 @@ enum CopyStatus {
     Failed,
 }
 
+#[derive(Clone, Debug, thiserror::Error)]
+enum ClipboardError {
+    #[error("window not available")]
+    NoWindow,
+    #[error("clipboard write failed: {message}")]
+    Write { message: String },
+}
+
 #[component]
 pub(super) fn Appendices() -> impl IntoView {
     view! {
@@ -117,18 +125,18 @@ fn PublicKeyAppendix() -> impl IntoView {
     }
 }
 
-async fn copy_to_clipboard(text: &str) -> Result<(), String> {
+async fn copy_to_clipboard(text: &str) -> Result<(), ClipboardError> {
     let Some(window) = web_sys::window() else {
-        return Err("window not available".to_string());
+        return Err(ClipboardError::NoWindow);
     };
     let clipboard = window.navigator().clipboard();
     JsFuture::from(clipboard.write_text(text))
         .await
         .map(|_| ())
-        .map_err(|error| {
-            error
+        .map_err(|error| ClipboardError::Write {
+            message: error
                 .as_string()
-                .unwrap_or_else(|| "clipboard write failed".to_string())
+                .unwrap_or_else(|| "clipboard write failed".to_string()),
         })
 }
 

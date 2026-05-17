@@ -39,6 +39,32 @@ pub fn placeholder_frontmatter(today: &str) -> String {
     )
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum MempoolPathError {
+    #[error("frontmatter is missing the leading `---` fence")]
+    MissingFrontmatter,
+    #[error("title is required")]
+    MissingTitle,
+    #[error("title cannot contain \" \\ : or newlines")]
+    TitleHasReservedChars,
+    #[error("category is required")]
+    MissingCategory,
+    #[error("category must be one of: {allowed}")]
+    UnknownCategory { allowed: String },
+    #[error("title must produce a non-empty slug")]
+    EmptySlug,
+    #[error("cannot build path: {message}")]
+    InvalidPath { message: String },
+}
+
+impl From<crate::domain::VirtualPathParseError> for MempoolPathError {
+    fn from(source: crate::domain::VirtualPathParseError) -> Self {
+        Self::InvalidPath {
+            message: source.to_string(),
+        }
+    }
+}
+
 /// Parse `raw_body`'s frontmatter and derive the canonical save path for
 /// a new mempool draft. Returns the human-readable error string the page
 /// surfaces in `save_error`.
@@ -48,36 +74,33 @@ pub fn placeholder_frontmatter(today: &str) -> String {
 /// - category required; ∈ [`LEDGER_CATEGORIES`].
 /// - explicit `slug:` is ignored — slug is derived from title via
 ///   [`slug_from_title`].
-pub fn derive_new_path(raw_body: &str) -> Result<VirtualPath, String> {
-    let meta = parse_mempool_frontmatter(raw_body)
-        .ok_or_else(|| "frontmatter is missing the leading `---` fence".to_string())?;
+pub fn derive_new_path(raw_body: &str) -> Result<VirtualPath, MempoolPathError> {
+    let meta = parse_mempool_frontmatter(raw_body).ok_or(MempoolPathError::MissingFrontmatter)?;
     let title = meta
         .title
         .as_deref()
         .map(str::trim)
         .filter(|t| !t.is_empty())
-        .ok_or_else(|| "title is required".to_string())?;
+        .ok_or(MempoolPathError::MissingTitle)?;
     if title.chars().any(|c| TITLE_RESERVED.contains(&c)) {
-        return Err("title cannot contain \" \\ : or newlines".to_string());
+        return Err(MempoolPathError::TitleHasReservedChars);
     }
     let category = meta
         .category
         .as_deref()
         .map(str::trim)
         .filter(|c| !c.is_empty())
-        .ok_or_else(|| "category is required".to_string())?;
+        .ok_or(MempoolPathError::MissingCategory)?;
     if !LEDGER_CATEGORIES.contains(&category) {
-        return Err(format!(
-            "category must be one of: {}",
-            LEDGER_CATEGORIES.join(", ")
-        ));
+        return Err(MempoolPathError::UnknownCategory {
+            allowed: LEDGER_CATEGORIES.join(", "),
+        });
     }
     let slug = slug_from_title(title);
     if slug.is_empty() {
-        return Err("title must produce a non-empty slug".to_string());
+        return Err(MempoolPathError::EmptySlug);
     }
-    VirtualPath::from_absolute(format!("/mempool/{category}/{slug}.md"))
-        .map_err(|error| format!("cannot build path: {error}"))
+    VirtualPath::from_absolute(format!("/mempool/{category}/{slug}.md")).map_err(Into::into)
 }
 
 #[cfg(test)]
@@ -98,13 +121,19 @@ mod tests {
     #[test]
     fn rejects_missing_frontmatter_fence() {
         let raw = "no frontmatter here\n";
-        assert!(derive_new_path(raw).unwrap_err().contains("`---`"));
+        assert_eq!(
+            derive_new_path(raw).unwrap_err(),
+            MempoolPathError::MissingFrontmatter
+        );
     }
 
     #[test]
     fn rejects_empty_title() {
         let raw = body("", "writing");
-        assert_eq!(derive_new_path(&raw).unwrap_err(), "title is required");
+        assert_eq!(
+            derive_new_path(&raw).unwrap_err(),
+            MempoolPathError::MissingTitle
+        );
     }
 
     #[test]
@@ -112,21 +141,24 @@ mod tests {
         for bad in ['"', '\\', ':'] {
             let raw = format!("---\ntitle: hello{bad}world\ncategory: writing\n---\n");
             let err = derive_new_path(&raw).unwrap_err();
-            assert!(err.contains("cannot contain"), "char {bad:?}: got {err}");
+            assert_eq!(err, MempoolPathError::TitleHasReservedChars);
         }
     }
 
     #[test]
     fn rejects_missing_category() {
         let raw = "---\ntitle: x\n---\n";
-        assert_eq!(derive_new_path(raw).unwrap_err(), "category is required");
+        assert_eq!(
+            derive_new_path(raw).unwrap_err(),
+            MempoolPathError::MissingCategory
+        );
     }
 
     #[test]
     fn rejects_unknown_category() {
         let raw = body("hello", "blog");
         let err = derive_new_path(&raw).unwrap_err();
-        assert!(err.contains("category must be one of"), "got {err}");
+        assert!(matches!(err, MempoolPathError::UnknownCategory { .. }));
     }
 
     #[test]

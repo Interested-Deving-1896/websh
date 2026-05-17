@@ -6,7 +6,10 @@ mod storage;
 #[cfg(any(test, feature = "mock"))]
 mod mock;
 
-pub use manifest::{parse_manifest_snapshot, serialize_manifest_snapshot};
+pub use manifest::{
+    ManifestPathError, ManifestSnapshotError, ManifestSnapshotResult, parse_manifest_snapshot,
+    serialize_manifest_snapshot,
+};
 pub use storage::{
     CommitBase, CommitDelta, CommitFileAddition, CommitOutcome, CommitRequest, LocalBoxFuture,
     ScannedDirectory, ScannedFile, ScannedSubtree, StorageBackend, StorageBackendRef, StorageError,

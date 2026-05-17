@@ -74,9 +74,11 @@ fn abort_upgrade(event: &VersionChangeEvent) {
 fn validate_required_stores(db: &Database) -> StorageResult<()> {
     for store_name in [STORE_DRAFT_CHANGES, STORE_METADATA] {
         if !db.store_names().iter().any(|name| name == store_name) {
-            return Err(StorageError::BadRequest(format!(
-                "idb schema missing object store `{store_name}`. clear site data to recreate local storage"
-            )));
+            return Err(StorageError::InvalidRequest {
+                message: format!(
+                    "idb schema missing object store `{store_name}`. clear site data to recreate local storage"
+                ),
+            });
         }
     }
     Ok(())
@@ -158,7 +160,9 @@ pub async fn save_draft_delta(
         };
         let value = record
             .serialize(&Serializer::json_compatible())
-            .map_err(|e| StorageError::BadRequest(format!("serialize: {e}")))?;
+            .map_err(|e| StorageError::InvalidRequest {
+                message: format!("serialize: {e}"),
+            })?;
         changes_store
             .put(&value, None)
             .map_err(idb_err)?
@@ -168,12 +172,15 @@ pub async fn save_draft_delta(
 
     let index_record = MetadataRecord {
         key: draft_paths_metadata_key(draft_id),
-        value: serde_json::to_string(&current_paths)
-            .map_err(|e| StorageError::BadRequest(format!("serialize draft index: {e}")))?,
+        value: serde_json::to_string(&current_paths).map_err(|e| StorageError::InvalidRequest {
+            message: format!("serialize draft index: {e}"),
+        })?,
     };
     let index_value = index_record
         .serialize(&Serializer::json_compatible())
-        .map_err(|e| StorageError::BadRequest(format!("serialize: {e}")))?;
+        .map_err(|e| StorageError::InvalidRequest {
+            message: format!("serialize: {e}"),
+        })?;
     metadata_store
         .put(&index_value, None)
         .map_err(idb_err)?
@@ -209,10 +216,15 @@ async fn load_pathwise_draft(
             .await
             .map_err(idb_err)?;
         let Some(value) = value else { continue };
-        let record: DraftChangeRecord = serde_wasm_bindgen::from_value(value)
-            .map_err(|e| StorageError::BadRequest(format!("deserialize: {e}")))?;
-        let path = VirtualPath::from_absolute(record.path)
-            .map_err(|error| StorageError::BadRequest(error.to_string()))?;
+        let record: DraftChangeRecord =
+            serde_wasm_bindgen::from_value(value).map_err(|e| StorageError::InvalidRequest {
+                message: format!("deserialize: {e}"),
+            })?;
+        let path = VirtualPath::from_absolute(record.path).map_err(|error| {
+            StorageError::InvalidRequest {
+                message: error.to_string(),
+            }
+        })?;
         let entry = record.entry;
         changes.upsert_at(path.clone(), entry.change, entry.timestamp);
         if !entry.staged {
@@ -232,7 +244,9 @@ async fn load_draft_path_index(
     };
     serde_json::from_str(&raw)
         .map(Some)
-        .map_err(|e| StorageError::BadRequest(format!("deserialize draft index: {e}")))
+        .map_err(|e| StorageError::InvalidRequest {
+            message: format!("deserialize draft index: {e}"),
+        })
 }
 
 fn draft_paths_metadata_key(draft_id: &str) -> String {
@@ -254,7 +268,9 @@ pub async fn save_metadata(db: &Database, key: &str, value: &str) -> StorageResu
     };
     let js = record
         .serialize(&Serializer::json_compatible())
-        .map_err(|e| StorageError::BadRequest(format!("serialize: {e}")))?;
+        .map_err(|e| StorageError::InvalidRequest {
+            message: format!("serialize: {e}"),
+        })?;
     store
         .put(&js, None)
         .map_err(idb_err)?
@@ -277,8 +293,10 @@ pub async fn load_metadata(db: &Database, key: &str) -> StorageResult<Option<Str
     match value {
         None => Ok(None),
         Some(v) => {
-            let record: MetadataRecord = serde_wasm_bindgen::from_value(v)
-                .map_err(|e| StorageError::BadRequest(format!("deserialize: {e}")))?;
+            let record: MetadataRecord =
+                serde_wasm_bindgen::from_value(v).map_err(|e| StorageError::InvalidRequest {
+                    message: format!("deserialize: {e}"),
+                })?;
             Ok(Some(record.value))
         }
     }
@@ -287,9 +305,13 @@ pub async fn load_metadata(db: &Database, key: &str) -> StorageResult<Option<Str
 fn idb_err<E: std::fmt::Display>(e: E) -> StorageError {
     let s = e.to_string().to_lowercase();
     if s.contains("quotaexceeded") {
-        StorageError::BadRequest("local draft storage full. discard or commit to free space".into())
+        StorageError::InvalidRequest {
+            message: "local draft storage full. discard or commit to free space".into(),
+        }
     } else {
-        StorageError::NetworkError(format!("idb: {e}"))
+        StorageError::Network {
+            message: format!("idb: {e}"),
+        }
     }
 }
 

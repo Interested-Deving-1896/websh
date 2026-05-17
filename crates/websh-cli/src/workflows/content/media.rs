@@ -58,23 +58,56 @@ pub(crate) fn derived_for_path(
     Ok(fields)
 }
 
-fn read_pdf_dimensions(path: &Path) -> Result<(PageSize, u32, u32), String> {
-    let doc = lopdf::Document::load(path).map_err(|e| format!("load: {e}"))?;
+#[derive(Debug, thiserror::Error)]
+enum PdfDimensionError {
+    #[error("load pdf: {source}")]
+    Load {
+        #[from]
+        source: lopdf::Error,
+    },
+    #[error("pdf has no pages")]
+    NoPages,
+    #[error("read page object: {source}")]
+    PageObject {
+        #[source]
+        source: lopdf::Error,
+    },
+    #[error("read page dictionary: {source}")]
+    PageDict {
+        #[source]
+        source: lopdf::Error,
+    },
+    #[error("read MediaBox: {source}")]
+    MediaBox {
+        #[source]
+        source: lopdf::Error,
+    },
+    #[error("read MediaBox array: {source}")]
+    MediaBoxArray {
+        #[source]
+        source: lopdf::Error,
+    },
+    #[error("MediaBox has fewer than 4 entries")]
+    MediaBoxTooShort,
+}
+
+fn read_pdf_dimensions(path: &Path) -> Result<(PageSize, u32, u32), PdfDimensionError> {
+    let doc = lopdf::Document::load(path)?;
     let pages = doc.get_pages();
     let page_count = u32::try_from(pages.len()).unwrap_or(u32::MAX);
-    let (_, page_id) = pages.iter().next().ok_or_else(|| "no pages".to_string())?;
+    let (_, page_id) = pages.iter().next().ok_or(PdfDimensionError::NoPages)?;
     let page = doc
         .get_object(*page_id)
-        .map_err(|e| format!("page object: {e}"))?
+        .map_err(|source| PdfDimensionError::PageObject { source })?
         .as_dict()
-        .map_err(|e| format!("page dict: {e}"))?;
+        .map_err(|source| PdfDimensionError::PageDict { source })?;
     let media_box = page
         .get(b"MediaBox")
-        .map_err(|e| format!("MediaBox: {e}"))?
+        .map_err(|source| PdfDimensionError::MediaBox { source })?
         .as_array()
-        .map_err(|e| format!("MediaBox array: {e}"))?;
+        .map_err(|source| PdfDimensionError::MediaBoxArray { source })?;
     if media_box.len() < 4 {
-        return Err("MediaBox has < 4 entries".to_string());
+        return Err(PdfDimensionError::MediaBoxTooShort);
     }
     let nums: Vec<f64> = media_box
         .iter()

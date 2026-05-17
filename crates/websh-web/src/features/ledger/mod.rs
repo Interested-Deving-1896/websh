@@ -16,8 +16,8 @@ use crate::shared::components::{
     SiteContentFrame, SiteSurface,
 };
 use model::{
-    LedgerEntry, LedgerFilter, LedgerModel, build_ledger_model, ledger_filter_for_route,
-    load_content_ledger,
+    LedgerEntry, LedgerFilter, LedgerLoadError, LedgerModel, build_ledger_model,
+    ledger_filter_for_route, load_content_ledger,
 };
 use websh_core::attestation::ledger::CONTENT_LEDGER_ROUTE;
 use websh_core::domain::VirtualPath;
@@ -39,7 +39,7 @@ pub fn LedgerPage(route: Memo<RouteFrame>) -> impl IntoView {
             match root_status {
                 Some(MountLoadStatus::Loaded { .. }) => load_content_ledger(ctx).await.map(Some),
                 Some(MountLoadStatus::Failed { error, .. }) => {
-                    Err(format!("root mount failed: {error}"))
+                    Err(LedgerLoadError::RootMountFailed { message: error })
                 }
                 Some(MountLoadStatus::Loading { .. }) | None => Ok(None),
             }
@@ -331,6 +331,13 @@ fn LedgerBlock(entry: LedgerEntry, block_number: String, previous_hash: String) 
                         <span>{part.clone()}</span>
                     }).collect_view()}
                 </span>
+                {(!entry.variants.is_empty()).then(|| view! {
+                    <span class=css::variantsLine aria-label="Bundle variants">
+                        {entry.variants.iter().map(|variant| view! {
+                            <span class=css::variantChip>{variant.clone()}</span>
+                        }).collect_view()}
+                    </span>
+                })}
             </div>
             <div class=css::blockFoot>
                 <span class=css::prev aria-label=previous_hash_label>

@@ -2,6 +2,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
+use anyhow::{Context, bail};
 use websh_core::attestation::artifact::{Attestation, Subject, message_sha256};
 use websh_core::crypto::pgp::normalize_fingerprint;
 
@@ -56,11 +57,13 @@ pub(super) fn sign_subject_with_gpg(
 ) -> CliResult<Attestation> {
     let message = subject.canonical_message()?;
     let signature_dir = resolve_path(root, signature_dir);
-    fs::create_dir_all(&signature_dir)?;
+    fs::create_dir_all(&signature_dir)
+        .with_context(|| format!("create directory {}", signature_dir.display()))?;
     let slug = slugify_route(subject.route());
     let message_path = signature_dir.join(format!("{slug}.message.txt"));
     let signature_path = signature_dir.join(format!("{slug}.sig.asc"));
-    fs::write(&message_path, &message)?;
+    fs::write(&message_path, &message)
+        .with_context(|| format!("write {}", message_path.display()))?;
 
     let mut command = Command::new("gpg");
     command
@@ -74,22 +77,22 @@ pub(super) fn sign_subject_with_gpg(
     }
     command.arg(&message_path);
 
-    let output = command.output().map_err(|error| {
+    let output = command.output().with_context(|| {
         format!(
-            "failed to run gpg for {}: {error}. Use --no-sign to regenerate pending subjects only.",
+            "run gpg for {}. Use --no-sign to regenerate pending subjects only",
             subject.route()
         )
     })?;
     if !output.status.success() {
-        return Err(format!(
+        bail!(
             "gpg failed for {}\n{}",
             subject.route(),
             String::from_utf8_lossy(&output.stderr)
-        )
-        .into());
+        );
     }
 
-    let signature_body = fs::read_to_string(&signature_path)?;
+    let signature_body = fs::read_to_string(&signature_path)
+        .with_context(|| format!("read {}", signature_path.display()))?;
     let fingerprint = verify_pgp_signature(root, key, &signature_body, &message)?;
     let signer = pgp_signer_from_key(root, key)
         .ok()
@@ -128,7 +131,7 @@ pub(super) fn verify_pgp_signature(
         return Ok(normalize_fingerprint(&key.fingerprint().to_string()));
     }
 
-    Err("PGP detached signature did not verify with the supplied key".into())
+    bail!("PGP detached signature did not verify with the supplied key")
 }
 
 pub(super) fn pgp_signer_from_key(root: &Path, key_path: &Path) -> CliResult<Option<String>> {

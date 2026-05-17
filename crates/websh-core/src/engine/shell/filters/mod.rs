@@ -115,9 +115,12 @@ fn filter_grep(args: &[String], lines: Vec<OutputLine>) -> CommandResult {
 }
 
 fn build_grep_regex(pattern: &str, ignore_case: bool) -> Result<regex::Regex, regex::Error> {
-    regex::RegexBuilder::new(pattern)
-        .case_insensitive(ignore_case)
-        .build()
+    let mut builder = regex::RegexBuilder::new(pattern);
+    builder.case_insensitive(ignore_case);
+    if ignore_case {
+        builder.unicode(false);
+    }
+    builder.build()
 }
 
 fn regex_matches_line(re: &regex::Regex, data: &OutputLineData) -> bool {

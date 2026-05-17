@@ -11,10 +11,13 @@ use websh_core::runtime::{self as core_runtime, RuntimeStateSnapshot};
 use crate::render::theme;
 use crate::runtime::{drafts, loader, state, storage_state, wallet};
 
-use super::AppContext;
+use super::{
+    AppContext, CommitServiceError, CommitServiceResult, RuntimeServiceError, RuntimeServiceResult,
+    ThemeError,
+};
 use crate::runtime::loader::RuntimeLoad;
 use crate::runtime::mounts::{MountLoadStatus, MountScanJob, MountScanResult};
-use crate::runtime::state::EnvironmentError;
+use crate::runtime::{EnvironmentError, RuntimeLoadError};
 
 #[derive(Clone, Copy)]
 pub struct RuntimeServices {
@@ -60,16 +63,12 @@ impl RuntimeServices {
         Ok(())
     }
 
-    pub fn set_theme(&self, raw_theme: &str) -> Result<&'static str, String> {
+    pub fn set_theme(&self, raw_theme: &str) -> Result<&'static str, ThemeError> {
         let Some(theme_id) = theme::normalize_theme_id(raw_theme) else {
-            return Err(format!(
-                "unknown theme '{}'. available: {}",
-                raw_theme,
-                theme::theme_ids().collect::<Vec<_>>().join(", ")
-            ));
+            return Err(ThemeError::unknown(raw_theme));
         };
         let snapshot = state::set_env_var("THEME", theme_id)
-            .map_err(|error| format!("failed to persist {theme_id}: {error}"))?;
+            .map_err(|source| ThemeError::Persist { theme_id, source })?;
         if self.ctx.theme.get_untracked() != theme_id {
             self.ctx.theme.set(theme_id);
         }
@@ -94,14 +93,14 @@ impl RuntimeServices {
         state::github_token_for_commit()
     }
 
-    pub async fn reload_runtime(&self) -> Result<(), String> {
+    pub async fn reload_runtime(&self) -> RuntimeServiceResult {
         self.ctx.clear_text_cache();
         self.mark_root_mount_loading();
         let load = match self.load_runtime().await {
             Ok(load) => load,
             Err(error) => {
-                self.apply_failed_root_mount_load(error.clone());
-                return Err(error);
+                self.apply_failed_root_mount_load(error.to_string());
+                return Err(error.into());
             }
         };
         let jobs = load.mounts.scan_jobs.clone();
@@ -110,13 +109,20 @@ impl RuntimeServices {
         Ok(())
     }
 
-    pub async fn reload_runtime_mount(&self, mount_root: VirtualPath) -> Result<(), String> {
+    pub async fn reload_runtime_mount(&self, mount_root: VirtualPath) -> RuntimeServiceResult {
         if mount_root.is_root() {
             return self.reload_runtime().await;
         }
 
         self.ctx.evict_text_cache_mount(&mount_root);
-        let backend = self.backend_for_mount_root(&mount_root)?;
+        let backend = self
+            .ctx
+            .backend_for_mount_root(&mount_root)
+            .ok_or_else(|| {
+                RuntimeServiceError::Commit(CommitServiceError::NoBackend {
+                    mount_root: mount_root.clone(),
+                })
+            })?;
         let generation = self.ctx.runtime_generation();
         let (declared_mount, epoch) = self.ctx.mark_mount_loading(&mount_root)?;
         let result = loader::scan_mount(MountScanJob {
@@ -125,10 +131,11 @@ impl RuntimeServices {
             epoch,
         })
         .await;
-        self.apply_mount_scan_result(generation, result)
+        self.apply_mount_scan_result(generation, result)?;
+        Ok(())
     }
 
-    pub async fn load_runtime(&self) -> Result<RuntimeLoad, String> {
+    pub async fn load_runtime(&self) -> Result<RuntimeLoad, RuntimeLoadError> {
         let mut load = loader::reload_runtime().await?;
         load.remote_heads = hydrate_remote_heads(&load.mounts.effective_mounts()).await;
         Ok(load)
@@ -180,7 +187,7 @@ impl RuntimeServices {
         &self,
         generation: u64,
         result: MountScanResult,
-    ) -> Result<(), String> {
+    ) -> RuntimeServiceResult {
         self.ctx.apply_mount_scan_result(generation, result)
     }
 
@@ -365,7 +372,7 @@ impl RuntimeServices {
         &self,
         mount_root: VirtualPath,
         message: String,
-    ) -> Result<CommitOutcome, String> {
+    ) -> CommitServiceResult {
         let changes = self.ctx.changes.with_untracked(|changes| changes.clone());
         let auth_token = self.github_token_for_commit();
         let outcome = self
@@ -381,7 +388,7 @@ impl RuntimeServices {
         changes: ChangeSet,
         message: String,
         auth_token: Option<String>,
-    ) -> Result<CommitOutcome, String> {
+    ) -> CommitServiceResult {
         let backend = self.backend_for_mount_root(&mount_root)?;
         let expected_head = self.ctx.remote_head_for_path(&mount_root);
         core_runtime::commit_backend(
@@ -393,7 +400,7 @@ impl RuntimeServices {
             auth_token,
         )
         .await
-        .map_err(|err| err.to_string())
+        .map_err(Into::into)
     }
 
     pub async fn record_commit_outcome(&self, mount_root: &VirtualPath, outcome: &CommitOutcome) {
@@ -421,13 +428,12 @@ impl RuntimeServices {
     fn backend_for_mount_root(
         &self,
         mount_root: &VirtualPath,
-    ) -> Result<StorageBackendRef, String> {
-        self.ctx.backend_for_mount_root(mount_root).ok_or_else(|| {
-            format!(
-                "sync: no backend registered at mount root {}",
-                mount_root.as_str()
-            )
-        })
+    ) -> Result<StorageBackendRef, CommitServiceError> {
+        self.ctx
+            .backend_for_mount_root(mount_root)
+            .ok_or_else(|| CommitServiceError::NoBackend {
+                mount_root: mount_root.clone(),
+            })
     }
 }
 

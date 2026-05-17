@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 websh-core = { workspace = true, features = ["eth-verify"] }
 serde_json = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 pgp = { workspace = true }

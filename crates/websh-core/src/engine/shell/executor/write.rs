@@ -20,6 +20,7 @@ pub(super) fn blank_file_meta(kind: NodeKind) -> NodeMetadata {
     NodeMetadata {
         schema: SCHEMA_VERSION,
         kind,
+        bundle: None,
         authored: Fields::default(),
         derived: Fields::default(),
     }
@@ -29,6 +30,7 @@ pub(super) fn blank_dir_meta() -> NodeMetadata {
     NodeMetadata {
         schema: SCHEMA_VERSION,
         kind: NodeKind::Directory,
+        bundle: None,
         authored: Fields::default(),
         derived: Fields::default(),
     }

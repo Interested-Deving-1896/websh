@@ -42,7 +42,10 @@ External crates import shared behavior from:
 - `websh_core::crypto`
 - `websh_core::ports`
 - `websh_core::support`
-- `websh_core::errors`
+
+Error types are exported from the owning facade (`domain`, `filesystem`,
+`runtime`, `attestation`, `ports`, and so on). There is no cross-context
+`websh_core::errors` facade.
 
 `websh_core::engine` is private. If a consumer needs something under `engine`, expose a narrow item through the correct facade instead of making `engine` public.
 

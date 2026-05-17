@@ -24,6 +24,7 @@ pub(super) fn directory_metadata(name: &str) -> NodeMetadata {
     NodeMetadata {
         schema: SCHEMA_VERSION,
         kind: NodeKind::Directory,
+        bundle: None,
         authored: Fields {
             title,
             ..Fields::default()

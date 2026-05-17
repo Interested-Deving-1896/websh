@@ -1,9 +1,10 @@
 use crate::domain::{ChangeSet, ChangeType, VirtualPath};
 use crate::engine::filesystem::GlobalFs;
 use crate::engine::filesystem::merge;
-use crate::ports::{CommitRequest, StorageBackendRef, StorageError, StorageResult};
+use crate::ports::{CommitRequest, StorageBackendRef};
 
 use super::delta::{build_commit_delta, normalized_staged_changes, staged_cleanup_paths};
+use super::{CommitError, CommitPrepareError, CommitResult};
 
 /// Compose a [`CommitRequest`] from the local change set + the remote
 /// base snapshot.
@@ -19,18 +20,21 @@ pub(super) async fn prepare_commit(
     message: String,
     expected_head: Option<String>,
     auth_token: Option<String>,
-) -> StorageResult<CommitRequest> {
+) -> CommitResult<CommitRequest> {
     let staged_changes = changes.staged_subset();
     for (path, entry) in staged_changes.iter_staged() {
         if !path.starts_with(mount_root) {
-            return Err(StorageError::BadRequest(format!(
-                "staged change {path} is outside commit root {mount_root}"
-            )));
+            return Err(CommitPrepareError::StagedPathOutsideMount {
+                path: path.clone(),
+                mount_root: mount_root.clone(),
+            }
+            .into());
         }
         if path == mount_root && matches!(entry.change, ChangeType::DeleteDirectory) {
-            return Err(StorageError::BadRequest(format!(
-                "cannot delete commit root {mount_root}"
-            )));
+            return Err(CommitPrepareError::DeleteCommitRoot {
+                mount_root: mount_root.clone(),
+            }
+            .into());
         }
     }
 
@@ -41,7 +45,7 @@ pub(super) async fn prepare_commit(
     let mut merged = GlobalFs::empty();
     merged
         .mount_scanned_subtree(mount_root.clone(), &base_snapshot)
-        .map_err(|error| StorageError::BadRequest(format!("assemble commit view: {error:?}")))?;
+        .map_err(CommitPrepareError::from)?;
 
     let normalized_changes = normalized_staged_changes(&staged_changes);
     let cleanup_paths = staged_cleanup_paths(&staged_changes);
@@ -49,9 +53,11 @@ pub(super) async fn prepare_commit(
 
     merge::apply_staged_changes_to_global_for_root(&mut merged, &normalized_changes, mount_root);
 
-    let merged_snapshot = merged
-        .export_mount_snapshot(mount_root)
-        .ok_or_else(|| StorageError::BadRequest(format!("missing mount root {mount_root}")))?;
+    let merged_snapshot = merged.export_mount_snapshot(mount_root).ok_or_else(|| {
+        CommitError::from(CommitPrepareError::MissingMountRoot {
+            mount_root: mount_root.clone(),
+        })
+    })?;
 
     Ok(CommitRequest {
         delta,

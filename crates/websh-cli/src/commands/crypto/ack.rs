@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use anyhow::{Context, anyhow, bail};
 use clap::{Args, Subcommand};
 
 use websh_core::crypto::ack::{
@@ -74,14 +75,13 @@ pub(crate) fn run(root: &Path, command: AckCommand) -> CliResult {
 fn init(root: &Path, force: bool) -> CliResult {
     let path = root.join(ACK_LOCAL_SOURCE_PATH);
     if path.exists() && !force {
-        return Err(format!(
+        bail!(
             "{} already exists; pass --force to replace it",
             path.display()
-        )
-        .into());
+        );
     }
     write_json(&path, &AckPrivateSource::default())?;
-    fs::create_dir_all(root.join(ACK_RECEIPTS_DIR))?;
+    fs::create_dir_all(root.join(ACK_RECEIPTS_DIR)).context("create ACK receipts directory")?;
     println!("created {}", path.display());
     Ok(())
 }
@@ -94,7 +94,7 @@ fn remove_entry(root: &Path, name: String, keep_receipt: bool) -> CliResult {
         .entries
         .iter()
         .position(|entry| normalize_ack_name(&entry.name) == normalized)
-        .ok_or_else(|| format!("ACK entry not found after normalization: {normalized}"))?;
+        .ok_or_else(|| anyhow!("ACK entry not found after normalization: {normalized}"))?;
     let removed = source.entries.remove(index);
 
     write_json(&path, &source)?;
@@ -110,7 +110,8 @@ fn remove_entry(root: &Path, name: String, keep_receipt: bool) -> CliResult {
     if removed.mode == AckEntryMode::Private && !keep_receipt {
         let receipt_path = default_receipt_path(root, &removed.name);
         if receipt_path.exists() {
-            fs::remove_file(&receipt_path)?;
+            fs::remove_file(&receipt_path)
+                .with_context(|| format!("remove {}", receipt_path.display()))?;
             println!("deleted {}", receipt_path.display());
         }
     }
@@ -120,7 +121,7 @@ fn remove_entry(root: &Path, name: String, keep_receipt: bool) -> CliResult {
 
 fn add(root: &Path, public: bool, private: bool, name: String) -> CliResult {
     if !public && !private {
-        return Err("choose --public or --private".into());
+        bail!("choose --public or --private");
     }
 
     let path = root.join(ACK_LOCAL_SOURCE_PATH);
@@ -131,7 +132,7 @@ fn add(root: &Path, public: bool, private: bool, name: String) -> CliResult {
         .iter()
         .any(|entry| normalize_ack_name(&entry.name) == normalized)
     {
-        return Err(format!("ACK entry already exists after normalization: {normalized}").into());
+        bail!("ACK entry already exists after normalization: {normalized}");
     }
 
     source.entries.push(AckSourceEntry {
@@ -224,15 +225,15 @@ fn verify(root: &Path, name: Option<String>, receipt: Option<PathBuf>) -> CliRes
     match (name, receipt) {
         (Some(name), None) => verify_public_name(&artifact, &name),
         (None, Some(path)) => verify_private_receipt_file(&artifact, &path),
-        _ => Err("choose --name or --receipt".into()),
+        _ => bail!("choose --name or --receipt"),
     }
 }
 
 fn verify_public_name(artifact: &AckArtifact, name: &str) -> CliResult {
     let proof = public_proof_for_name(artifact, name)?
-        .ok_or_else(|| format!("public ACK entry not found: {name}"))?;
+        .ok_or_else(|| anyhow!("public ACK entry not found: {name}"))?;
     if !proof.verified {
-        return Err("public ACK proof did not verify".into());
+        bail!("public ACK proof did not verify");
     }
     println!(
         "public ack: ok leaf {} root {}",

@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use anyhow::{Context, bail};
 use websh_core::attestation::artifact::AttestationArtifact;
 use websh_core::attestation::ledger::{CONTENT_LEDGER_PATH, CONTENT_LEDGER_ROUTE};
 use websh_site::{ATTESTATIONS_PATH, PUBLIC_KEY_PATH};
@@ -67,7 +68,8 @@ fn no_sign_from_env() -> bool {
 
 pub(crate) fn attest_all(root: &Path, options: AttestAllOptions) -> CliResult {
     let content_root = resolve_path(root, &options.content_dir);
-    fs::create_dir_all(&content_root)?;
+    fs::create_dir_all(&content_root)
+        .with_context(|| format!("create directory {}", content_root.display()))?;
     sync_content(root, &options.content_dir)?;
     let ledger = crate::workflows::content::generate_content_ledger(root, &options.content_dir)?;
     let manifest = build_manifest_from_sidecars(root, &options.content_dir)?;
@@ -95,7 +97,7 @@ pub(crate) fn attest_all(root: &Path, options: AttestAllOptions) -> CliResult {
 
     let mut routes = BTreeSet::from(["/".to_string()]);
     if !routes.insert(CONTENT_LEDGER_ROUTE.to_string()) {
-        return Err(format!("duplicate attestation route {CONTENT_LEDGER_ROUTE}").into());
+        bail!("duplicate attestation route {CONTENT_LEDGER_ROUTE}");
     }
     artifact.subjects.push(build_subject(
         root,
@@ -109,7 +111,7 @@ pub(crate) fn attest_all(root: &Path, options: AttestAllOptions) -> CliResult {
 
     for spec in specs {
         if !routes.insert(spec.route.clone()) {
-            return Err(format!("duplicate attestation route {}", spec.route).into());
+            bail!("duplicate attestation route {}", spec.route);
         }
         artifact.subjects.push(build_subject(
             root,

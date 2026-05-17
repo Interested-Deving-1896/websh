@@ -1,7 +1,9 @@
 use std::collections::BTreeSet;
 
 use crate::domain::{ChangeSet, ChangeType, VirtualPath};
-use crate::ports::{CommitDelta, CommitFileAddition, ScannedSubtree, StorageError, StorageResult};
+use crate::ports::{CommitDelta, CommitFileAddition, ScannedSubtree};
+
+use super::CommitPrepareError;
 
 pub(super) fn normalized_staged_changes(changes: &ChangeSet) -> ChangeSet {
     let deleted_dirs = delete_directory_paths(changes);
@@ -21,7 +23,7 @@ pub(super) fn build_commit_delta(
     base_snapshot: &ScannedSubtree,
     mount_root: &VirtualPath,
     normalized_changes: &ChangeSet,
-) -> StorageResult<CommitDelta> {
+) -> Result<CommitDelta, CommitPrepareError> {
     let mut additions = Vec::new();
     let mut deletions = Vec::new();
     let deleted_dirs = delete_directory_paths(normalized_changes);
@@ -39,9 +41,7 @@ pub(super) fn build_commit_delta(
             }
             ChangeType::DeleteDirectory => {}
             ChangeType::CreateBinary { .. } => {
-                return Err(StorageError::BadRequest(format!(
-                    "binary change at {path} cannot be committed until binary storage is supported"
-                )));
+                return Err(CommitPrepareError::UnsupportedBinaryChange { path: path.clone() });
             }
             ChangeType::CreateDirectory { .. } => {}
         }
@@ -61,9 +61,9 @@ pub(super) fn build_commit_delta(
         .map(|addition| addition.path.clone())
         .collect::<BTreeSet<_>>();
     if let Some(conflict) = deletions.iter().find(|path| addition_paths.contains(*path)) {
-        return Err(StorageError::BadRequest(format!(
-            "commit delta has both addition and deletion for {conflict}"
-        )));
+        return Err(CommitPrepareError::DeltaConflict {
+            path: conflict.clone(),
+        });
     }
 
     Ok(CommitDelta {

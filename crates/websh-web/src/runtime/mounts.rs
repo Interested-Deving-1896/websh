@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use websh_core::domain::{RuntimeMount, VirtualPath};
-use websh_core::ports::{ScannedSubtree, StorageBackendRef};
+use websh_core::ports::{ScannedSubtree, StorageBackendRef, StorageError};
 
 #[derive(Clone)]
 pub struct MountLoadSet {
@@ -34,7 +34,7 @@ pub struct MountScanResult {
     pub mount: RuntimeMount,
     pub backend: StorageBackendRef,
     pub epoch: u64,
-    pub scan: Result<ScannedSubtree, String>,
+    pub scan: Result<ScannedSubtree, StorageError>,
 }
 
 impl MountLoadSet {
@@ -289,7 +289,11 @@ mod tests {
             &'a self,
             _request: &'a CommitRequest,
         ) -> LocalBoxFuture<'a, StorageResult<CommitOutcome>> {
-            Box::pin(async { Err(StorageError::BadRequest("unused".to_string())) })
+            Box::pin(async {
+                Err(StorageError::InvalidRequest {
+                    message: "unused".to_string(),
+                })
+            })
         }
     }
 

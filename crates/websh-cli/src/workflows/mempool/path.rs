@@ -1,5 +1,3 @@
-use std::fmt;
-
 use websh_core::mempool::LEDGER_CATEGORIES;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -45,47 +43,33 @@ impl MempoolEntryPath {
     }
 }
 
-impl fmt::Display for MempoolEntryPath {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl std::fmt::Display for MempoolEntryPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub(crate) enum MempoolEntryPathError {
+    #[error("mempool entry path is empty")]
     Empty,
+    #[error("mempool entry path must be repo-relative")]
     Absolute,
+    #[error("mempool entry path targets a reserved file")]
     Reserved,
+    #[error("mempool entry path must be <category>/<slug>.md")]
     Shape,
+    #[error("mempool entry path contains an empty segment")]
     EmptySegment,
+    #[error("mempool entry path cannot contain . or ..")]
     Traversal,
+    #[error("unknown mempool category `{0}`")]
     UnknownCategory(String),
+    #[error("mempool entry path must end in .md")]
     Extension,
+    #[error("mempool entry slug must be lowercase ASCII letters, digits, and hyphens")]
     Slug,
 }
-
-impl fmt::Display for MempoolEntryPathError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => write!(f, "mempool entry path is empty"),
-            Self::Absolute => write!(f, "mempool entry path must be repo-relative"),
-            Self::Reserved => write!(f, "mempool entry path targets a reserved file"),
-            Self::Shape => write!(f, "mempool entry path must be <category>/<slug>.md"),
-            Self::EmptySegment => write!(f, "mempool entry path contains an empty segment"),
-            Self::Traversal => write!(f, "mempool entry path cannot contain . or .."),
-            Self::UnknownCategory(category) => {
-                write!(f, "unknown mempool category `{category}`")
-            }
-            Self::Extension => write!(f, "mempool entry path must end in .md"),
-            Self::Slug => write!(
-                f,
-                "mempool entry slug must be lowercase ASCII letters, digits, and hyphens"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for MempoolEntryPathError {}
 
 fn slug_is_valid(slug: &str) -> bool {
     if slug.is_empty() {

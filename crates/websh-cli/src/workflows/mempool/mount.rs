@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use anyhow::{Context, anyhow, bail};
 use serde::Deserialize;
 
 use crate::CliResult;
@@ -33,28 +34,27 @@ pub(crate) struct MempoolMountInfo {
 pub(crate) fn read_mempool_mount_declaration(root: &Path) -> CliResult<MempoolMountInfo> {
     let path = mempool_mount_decl_path(root);
     if !path.exists() {
-        return Err(format!(
+        bail!(
             "mempool mount declaration not found at {} — run `websh-cli mount init` first",
             path.display()
-        )
-        .into());
+        );
     }
-    let body = std::fs::read_to_string(&path)?;
-    let decl: MountDeclarationFile = serde_json::from_str(&body)
-        .map_err(|e| format!("failed to parse {}: {e}", path.display()))?;
+    let body =
+        std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+    let decl: MountDeclarationFile =
+        serde_json::from_str(&body).with_context(|| format!("parse {}", path.display()))?;
 
     if decl.backend != "github" {
-        return Err(format!(
+        bail!(
             "mempool mount at {} declares backend `{}`; expected `github`",
             path.display(),
             decl.backend
-        )
-        .into());
+        );
     }
     let repo = decl
         .repo
         .filter(|s| !s.trim().is_empty())
-        .ok_or_else(|| format!("{} is missing required `repo` field", path.display()))?;
+        .ok_or_else(|| anyhow!("{} is missing required `repo` field", path.display()))?;
     let branch = decl
         .branch
         .filter(|s| !s.trim().is_empty())

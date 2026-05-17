@@ -4,27 +4,102 @@ use crate::engine::attestation::artifact::{CONTENT_HASH, compute_content_sha256}
 
 use super::{
     CONTENT_LEDGER_GENESIS_HASH, CONTENT_LEDGER_SCHEME, ContentLedger, ContentLedgerCategory,
-    ContentLedgerEntry, ContentLedgerSortKey, compute_block_sha256,
+    ContentLedgerEntry, ContentLedgerSortKey, LedgerHashError, compute_block_sha256,
 };
 
+pub type LedgerValidationResult<T = ()> = Result<T, LedgerValidationError>;
+
+#[derive(Debug, thiserror::Error)]
+pub enum LedgerValidationError {
+    #[error("unsupported ledger version {version}")]
+    UnsupportedVersion { version: u32 },
+    #[error("unsupported ledger scheme {scheme}")]
+    UnsupportedScheme { scheme: String },
+    #[error("unsupported ledger hash {hash}")]
+    UnsupportedHash { hash: String },
+    #[error("ledger genesis_hash mismatch")]
+    GenesisHashMismatch,
+    #[error("ledger block_count does not match blocks")]
+    BlockCountMismatch { declared: usize, actual: usize },
+    #[error("ledger block height mismatch at index {index}")]
+    BlockHeightMismatch {
+        index: usize,
+        height: u64,
+        expected: u64,
+    },
+    #[error("ledger blocks are not sorted canonically")]
+    BlocksNotSorted,
+    #[error("prev_block_sha256 mismatch at block {height}")]
+    PrevBlockHashMismatch { height: u64 },
+    #[error("ledger sort_key path mismatch for {id}")]
+    SortKeyPathMismatch { id: String },
+    #[error("duplicate ledger id {id}")]
+    DuplicateId { id: String },
+    #[error("duplicate ledger route {route}")]
+    DuplicateRoute { route: String },
+    #[error("duplicate ledger path {path}")]
+    DuplicatePath { path: String },
+    #[error("content hash mismatch for {id}")]
+    ContentHashMismatch { id: String },
+    #[error("block hash mismatch for {id}")]
+    BlockHashMismatch { id: String },
+    #[error("ledger chain_head mismatch")]
+    ChainHeadMismatch,
+    #[error("ledger id mismatch for {path}")]
+    IdMismatch { path: String },
+    #[error("ledger category mismatch for {path}")]
+    CategoryMismatch { path: String },
+    #[error("ledger content has no files for {id}")]
+    EmptyContent { id: String },
+    #[error("empty content file {path}")]
+    EmptyContentFile { path: String },
+    #[error("content files must be strictly sorted for {id}")]
+    ContentFilesNotSorted { id: String },
+    #[error("missing primary content file {path}")]
+    MissingPrimaryContentFile { path: String },
+    #[error("ledger sort_key date is invalid: {date}")]
+    InvalidSortKeyDate { date: String },
+    #[error("{field} must be normalized 0x-prefixed sha256")]
+    InvalidSha256Field { field: &'static str, value: String },
+    #[error("ledger route must be absolute: {route}")]
+    InvalidRoute { route: String },
+    #[error("ledger path must be content-root-relative: {path}")]
+    InvalidContentPath { path: String },
+    #[error("ledger content file path must be under content/: {path}")]
+    InvalidArtifactFilePath { path: String },
+    #[error("{label} contains an invalid segment: {path}")]
+    InvalidPathSegment { label: &'static str, path: String },
+    #[error(transparent)]
+    Hash(#[from] LedgerHashError),
+}
+
 impl ContentLedger {
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> LedgerValidationResult {
         if self.version != 1 {
-            return Err(format!("unsupported ledger version {}", self.version));
+            return Err(LedgerValidationError::UnsupportedVersion {
+                version: self.version,
+            });
         }
         if self.scheme != CONTENT_LEDGER_SCHEME {
-            return Err(format!("unsupported ledger scheme {}", self.scheme));
+            return Err(LedgerValidationError::UnsupportedScheme {
+                scheme: self.scheme.clone(),
+            });
         }
         if self.hash != CONTENT_HASH {
-            return Err(format!("unsupported ledger hash {}", self.hash));
+            return Err(LedgerValidationError::UnsupportedHash {
+                hash: self.hash.clone(),
+            });
         }
         if self.genesis_hash != CONTENT_LEDGER_GENESIS_HASH {
-            return Err("ledger genesis_hash mismatch".to_string());
+            return Err(LedgerValidationError::GenesisHashMismatch);
         }
         validate_sha256_field("genesis_hash", &self.genesis_hash)?;
         validate_sha256_field("chain_head", &self.chain_head)?;
         if self.block_count != self.blocks.len() {
-            return Err("ledger block_count does not match blocks".to_string());
+            return Err(LedgerValidationError::BlockCountMismatch {
+                declared: self.block_count,
+                actual: self.blocks.len(),
+            });
         }
 
         let mut ids = BTreeSet::new();
@@ -36,52 +111,64 @@ impl ContentLedger {
         for (index, block) in self.blocks.iter().enumerate() {
             let expected_height = index as u64 + 1;
             if block.height != expected_height {
-                return Err(format!(
-                    "ledger block height mismatch at index {}",
-                    index + 1
-                ));
+                return Err(LedgerValidationError::BlockHeightMismatch {
+                    index: index + 1,
+                    height: block.height,
+                    expected: expected_height,
+                });
             }
             validate_sort_key(&block.sort_key)?;
             if let Some(previous_sort_key) = previous_sort_key
                 && previous_sort_key > &block.sort_key
             {
-                return Err("ledger blocks are not sorted canonically".to_string());
+                return Err(LedgerValidationError::BlocksNotSorted);
             }
             previous_sort_key = Some(&block.sort_key);
 
             validate_sha256_field("prev_block_sha256", &block.prev_block_sha256)?;
             validate_sha256_field("block_sha256", &block.block_sha256)?;
             if block.prev_block_sha256 != expected_prev_block_sha256 {
-                return Err(format!(
-                    "prev_block_sha256 mismatch at block {}",
-                    block.height
-                ));
+                return Err(LedgerValidationError::PrevBlockHashMismatch {
+                    height: block.height,
+                });
             }
 
             let entry = &block.entry;
             if block.sort_key.path != entry.path {
-                return Err(format!("ledger sort_key path mismatch for {}", entry.id));
+                return Err(LedgerValidationError::SortKeyPathMismatch {
+                    id: entry.id.clone(),
+                });
             }
             if !ids.insert(entry.id.as_str()) {
-                return Err(format!("duplicate ledger id {}", entry.id));
+                return Err(LedgerValidationError::DuplicateId {
+                    id: entry.id.clone(),
+                });
             }
             if !routes.insert(entry.route.as_str()) {
-                return Err(format!("duplicate ledger route {}", entry.route));
+                return Err(LedgerValidationError::DuplicateRoute {
+                    route: entry.route.clone(),
+                });
             }
             if !paths.insert(entry.path.as_str()) {
-                return Err(format!("duplicate ledger path {}", entry.path));
+                return Err(LedgerValidationError::DuplicatePath {
+                    path: entry.path.clone(),
+                });
             }
 
             validate_entry(entry)?;
             let content_sha256 =
-                compute_content_sha256(&entry.content_files).map_err(|error| error.to_string())?;
+                compute_content_sha256(&entry.content_files).map_err(LedgerHashError::from)?;
             if content_sha256 != entry.content_sha256 {
-                return Err(format!("content hash mismatch for {}", entry.id));
+                return Err(LedgerValidationError::ContentHashMismatch {
+                    id: entry.id.clone(),
+                });
             }
 
-            let block_sha256 = compute_block_sha256(block).map_err(|error| error.to_string())?;
+            let block_sha256 = compute_block_sha256(block)?;
             if block_sha256 != block.block_sha256 {
-                return Err(format!("block hash mismatch for {}", entry.id));
+                return Err(LedgerValidationError::BlockHashMismatch {
+                    id: entry.id.clone(),
+                });
             }
             expected_prev_block_sha256 = block.block_sha256.clone();
         }
@@ -92,68 +179,76 @@ impl ContentLedger {
             .map(|block| block.block_sha256.as_str())
             .unwrap_or(&self.genesis_hash);
         if self.chain_head != expected_chain_head {
-            return Err("ledger chain_head mismatch".to_string());
+            return Err(LedgerValidationError::ChainHeadMismatch);
         }
 
         Ok(())
     }
 }
 
-fn validate_entry(entry: &ContentLedgerEntry) -> Result<(), String> {
+fn validate_entry(entry: &ContentLedgerEntry) -> LedgerValidationResult {
     validate_absolute_route(&entry.route)?;
     validate_content_path(&entry.path)?;
     let expected_id = format!("route:{}", entry.route);
     if entry.id != expected_id {
-        return Err(format!("ledger id mismatch for {}", entry.path));
+        return Err(LedgerValidationError::IdMismatch {
+            path: entry.path.clone(),
+        });
     }
     if entry.category != ContentLedgerCategory::for_path(&entry.path) {
-        return Err(format!("ledger category mismatch for {}", entry.path));
+        return Err(LedgerValidationError::CategoryMismatch {
+            path: entry.path.clone(),
+        });
     }
     validate_entry_content(entry)?;
     validate_sha256_field("content_sha256", &entry.content_sha256)
 }
 
-fn validate_entry_content(entry: &ContentLedgerEntry) -> Result<(), String> {
+fn validate_entry_content(entry: &ContentLedgerEntry) -> LedgerValidationResult {
     if entry.content_files.is_empty() {
-        return Err(format!("ledger content has no files for {}", entry.id));
+        return Err(LedgerValidationError::EmptyContent {
+            id: entry.id.clone(),
+        });
     }
 
     let primary_file = format!("content/{}", entry.path);
+    let primary_bundle_sidecar = format!("content/{}/_index.dir.json", entry.path);
     let mut previous_path: Option<&str> = None;
     let mut has_primary_file = false;
     for file in &entry.content_files {
         validate_artifact_file_path(&file.path)?;
         validate_sha256_field("content file sha256", &file.sha256)?;
         if file.bytes == 0 {
-            return Err(format!("empty content file {}", file.path));
+            return Err(LedgerValidationError::EmptyContentFile {
+                path: file.path.clone(),
+            });
         }
-        if file.path == primary_file {
+        if file.path == primary_file || file.path == primary_bundle_sidecar {
             has_primary_file = true;
         }
         if let Some(previous_path) = previous_path
             && previous_path >= file.path.as_str()
         {
-            return Err(format!(
-                "content files must be strictly sorted for {}",
-                entry.id
-            ));
+            return Err(LedgerValidationError::ContentFilesNotSorted {
+                id: entry.id.clone(),
+            });
         }
         previous_path = Some(&file.path);
     }
     if !has_primary_file {
-        return Err(format!("missing primary content file {}", primary_file));
+        return Err(LedgerValidationError::MissingPrimaryContentFile { path: primary_file });
     }
     Ok(())
 }
 
-fn validate_sort_key(sort_key: &ContentLedgerSortKey) -> Result<(), String> {
+fn validate_sort_key(sort_key: &ContentLedgerSortKey) -> LedgerValidationResult {
     if let Some(date) = &sort_key.date {
         validate_sort_key_date(date)?;
     }
     validate_content_path(&sort_key.path)
 }
 
-fn validate_sort_key_date(date: &str) -> Result<(), String> {
+fn validate_sort_key_date(date: &str) -> LedgerValidationResult {
     let bytes = date.as_bytes();
     if bytes.len() != 10
         || bytes[4] != b'-'
@@ -163,24 +258,36 @@ fn validate_sort_key_date(date: &str) -> Result<(), String> {
         || !bytes[8..10].iter().all(|byte| byte.is_ascii_digit())
         || date.chars().any(char::is_control)
     {
-        return Err("ledger sort_key date is invalid".to_string());
+        return Err(LedgerValidationError::InvalidSortKeyDate {
+            date: date.to_string(),
+        });
     }
 
-    let year = date[0..4]
-        .parse::<u32>()
-        .map_err(|_| "ledger sort_key date is invalid".to_string())?;
-    let month = date[5..7]
-        .parse::<u32>()
-        .map_err(|_| "ledger sort_key date is invalid".to_string())?;
-    let day = date[8..10]
-        .parse::<u32>()
-        .map_err(|_| "ledger sort_key date is invalid".to_string())?;
+    let Ok(year) = date[0..4].parse::<u32>() else {
+        return Err(LedgerValidationError::InvalidSortKeyDate {
+            date: date.to_string(),
+        });
+    };
+    let Ok(month) = date[5..7].parse::<u32>() else {
+        return Err(LedgerValidationError::InvalidSortKeyDate {
+            date: date.to_string(),
+        });
+    };
+    let Ok(day) = date[8..10].parse::<u32>() else {
+        return Err(LedgerValidationError::InvalidSortKeyDate {
+            date: date.to_string(),
+        });
+    };
 
     let Some(max_day) = days_in_month(year, month) else {
-        return Err("ledger sort_key date is invalid".to_string());
+        return Err(LedgerValidationError::InvalidSortKeyDate {
+            date: date.to_string(),
+        });
     };
     if day == 0 || day > max_day {
-        return Err("ledger sort_key date is invalid".to_string());
+        return Err(LedgerValidationError::InvalidSortKeyDate {
+            date: date.to_string(),
+        });
     }
 
     Ok(())
@@ -201,21 +308,26 @@ fn is_leap_year(year: u32) -> bool {
     (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400)
 }
 
-fn validate_sha256_field(field: &str, value: &str) -> Result<(), String> {
+fn validate_sha256_field(field: &'static str, value: &str) -> LedgerValidationResult {
     if value.len() != 66
         || !value.starts_with("0x")
         || !value[2..]
             .bytes()
             .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
     {
-        return Err(format!("{field} must be normalized 0x-prefixed sha256"));
+        return Err(LedgerValidationError::InvalidSha256Field {
+            field,
+            value: value.to_string(),
+        });
     }
     Ok(())
 }
 
-fn validate_absolute_route(route: &str) -> Result<(), String> {
+fn validate_absolute_route(route: &str) -> LedgerValidationResult {
     if !route.starts_with('/') || route.contains('\\') || route.chars().any(char::is_control) {
-        return Err(format!("ledger route must be absolute: {route}"));
+        return Err(LedgerValidationError::InvalidRoute {
+            route: route.to_string(),
+        });
     }
     if route != "/" {
         validate_path_segments(route.trim_start_matches('/'), "ledger route")?;
@@ -223,33 +335,38 @@ fn validate_absolute_route(route: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_content_path(path: &str) -> Result<(), String> {
+fn validate_content_path(path: &str) -> LedgerValidationResult {
     if path.starts_with('/') || path.contains('\\') || path.chars().any(char::is_control) {
-        return Err(format!("ledger path must be content-root-relative: {path}"));
+        return Err(LedgerValidationError::InvalidContentPath {
+            path: path.to_string(),
+        });
     }
     validate_path_segments(path, "ledger path")
 }
 
-fn validate_artifact_file_path(path: &str) -> Result<(), String> {
+fn validate_artifact_file_path(path: &str) -> LedgerValidationResult {
     if !path.starts_with("content/")
         || path.starts_with('/')
         || path.contains('\\')
         || path.chars().any(char::is_control)
     {
-        return Err(format!(
-            "ledger content file path must be under content/: {path}"
-        ));
+        return Err(LedgerValidationError::InvalidArtifactFilePath {
+            path: path.to_string(),
+        });
     }
     validate_path_segments(path, "ledger content file path")
 }
 
-fn validate_path_segments(path: &str, label: &str) -> Result<(), String> {
+fn validate_path_segments(path: &str, label: &'static str) -> LedgerValidationResult {
     if path.is_empty()
         || path
             .split('/')
             .any(|part| part.is_empty() || matches!(part, "." | ".."))
     {
-        return Err(format!("{label} contains an invalid segment: {path}"));
+        return Err(LedgerValidationError::InvalidPathSegment {
+            label,
+            path: path.to_string(),
+        });
     }
     Ok(())
 }

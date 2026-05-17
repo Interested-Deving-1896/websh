@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::engine::attestation::artifact::{ContentFile, compute_content_sha256};
+use crate::engine::attestation::subject::SubjectCanonicalError;
 
 mod build;
 #[cfg(test)]
@@ -10,6 +11,7 @@ mod tests;
 mod validate;
 
 pub use build::compute_block_sha256;
+pub use validate::{LedgerValidationError, LedgerValidationResult};
 
 pub const CONTENT_LEDGER_SCHEME: &str = "websh.content-ledger.v1";
 pub const CONTENT_LEDGER_PATH: &str = "content/.websh/ledger.json";
@@ -83,7 +85,7 @@ struct ContentLedgerBlockForHash<'a> {
 }
 
 impl ContentLedgerBlock {
-    pub fn refresh_hash(&mut self) -> Result<(), serde_json::Error> {
+    pub fn refresh_hash(&mut self) -> Result<(), LedgerHashError> {
         self.block_sha256 = compute_block_sha256(self)?;
         Ok(())
     }
@@ -96,7 +98,7 @@ impl ContentLedgerEntry {
         path: String,
         category: ContentLedgerCategory,
         content_files: Vec<ContentFile>,
-    ) -> Result<Self, serde_json::Error> {
+    ) -> Result<Self, LedgerHashError> {
         let content_sha256 = compute_content_sha256(&content_files)?;
         Ok(Self {
             id,
@@ -107,6 +109,17 @@ impl ContentLedgerEntry {
             content_sha256,
         })
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum LedgerHashError {
+    #[error(transparent)]
+    Content(#[from] SubjectCanonicalError),
+    #[error("serialize ledger block: {source}")]
+    Block {
+        #[source]
+        source: serde_json::Error,
+    },
 }
 
 impl ContentLedgerSortKey {

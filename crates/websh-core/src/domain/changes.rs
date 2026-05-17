@@ -14,21 +14,19 @@ pub enum ChangeType {
     CreateFile {
         content: String,
         meta: NodeMetadata,
-        #[serde(default, skip_serializing_if = "is_default_extensions")]
         extensions: EntryExtensions,
     },
     CreateBinary {
         blob_id: String,
         mime: String,
         meta: NodeMetadata,
-        #[serde(default, skip_serializing_if = "is_default_extensions")]
         extensions: EntryExtensions,
     },
     UpdateFile {
         content: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(skip_serializing_if = "Option::is_none")]
         meta: Option<NodeMetadata>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(skip_serializing_if = "Option::is_none")]
         extensions: Option<EntryExtensions>,
     },
     DeleteFile,
@@ -36,10 +34,6 @@ pub enum ChangeType {
         meta: NodeMetadata,
     },
     DeleteDirectory,
-}
-
-fn is_default_extensions(e: &EntryExtensions) -> bool {
-    e == &EntryExtensions::default()
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -221,6 +215,7 @@ mod tests {
             meta: NodeMetadata {
                 schema: SCHEMA_VERSION,
                 kind: NodeKind::Page,
+                bundle: None,
                 authored: Fields::default(),
                 derived: Fields::default(),
             },
@@ -312,6 +307,47 @@ mod tests {
         assert_eq!(s.deletes_unstaged, 1);
         assert_eq!(s.total(), 3);
         assert_eq!(s.total_staged(), 2);
+    }
+
+    #[test]
+    fn create_file_roundtrip_serializes_extensions_explicitly() {
+        let mut cs = ChangeSet::new();
+        upsert(&mut cs, "/a.md", create_file("x"));
+
+        let json = serde_json::to_string(&cs).unwrap();
+        assert!(json.contains(r#""extensions":{}"#));
+
+        let back = serde_json::from_str::<ChangeSet>(&json).unwrap();
+        assert_eq!(back, cs);
+    }
+
+    #[test]
+    fn create_file_deserialization_requires_extensions() {
+        let json = r#"{
+            "entries": {
+                "/a.md": {
+                    "change": {
+                        "CreateFile": {
+                            "content": "x",
+                            "meta": {
+                                "schema": 1,
+                                "kind": "page",
+                                "authored": {},
+                                "derived": {}
+                            }
+                        }
+                    },
+                    "staged": true,
+                    "timestamp": 1234
+                }
+            }
+        }"#;
+
+        let err = serde_json::from_str::<ChangeSet>(json).unwrap_err();
+        assert!(
+            err.to_string().contains("missing field `extensions`"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]

@@ -1,11 +1,12 @@
 ---
-title: "Zero-Knowledge Proofs, from a Compiler Perspective (Korean)"
+title: "컴파일러 관점에서 보는 영지식 증명"
 date: "2026-05-15"
-tags: [zk, compilers, zero-knowledge, systems, korean]
+tags: [zk, compilers, systems]
 description: "프로그램이 relation, constraint, trace, proof가 되는 과정을 컴파일러 관점에서 설명합니다."
+language: ko
 ---
 
-# Zero-Knowledge Proofs, from a Compiler Perspective
+# 컴파일러 관점에서 보는 영지식 증명
 
 > How programs become relations, constraints, traces, and proofs.
 

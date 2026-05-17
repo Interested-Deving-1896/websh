@@ -37,9 +37,10 @@ websh-core -> external libraries only
 - `websh_core::crypto`
 - `websh_core::ports`
 - `websh_core::support`
-- `websh_core::errors`
 
-New shared behavior should enter through one of these facades. Do not add new cross-crate consumers of `engine`.
+New shared behavior should enter through one of these facades. Contextual error
+types are exported from the facade that owns the capability; there is no global
+`websh_core::errors` facade. Do not add new cross-crate consumers of `engine`.
 
 ## Boundaries
 

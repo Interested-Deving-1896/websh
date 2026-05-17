@@ -9,6 +9,7 @@ fn file_meta(kind: NodeKind) -> NodeMetadata {
     NodeMetadata {
         schema: SCHEMA_VERSION,
         kind,
+        bundle: None,
         authored: Fields::default(),
         derived: Fields::default(),
     }
@@ -18,6 +19,7 @@ fn dir_meta(name: &str) -> NodeMetadata {
     NodeMetadata {
         schema: SCHEMA_VERSION,
         kind: NodeKind::Directory,
+        bundle: None,
         authored: Fields {
             title: if name.is_empty() {
                 None
@@ -298,6 +300,7 @@ fn exported_mount_snapshot_sorts_regardless_of_input_order() {
     let tagged_dir = |title: &str, tag: &str| NodeMetadata {
         schema: SCHEMA_VERSION,
         kind: NodeKind::Directory,
+        bundle: None,
         authored: Fields {
             title: Some(title.to_string()),
             tags: Some(vec![tag.to_string()]),

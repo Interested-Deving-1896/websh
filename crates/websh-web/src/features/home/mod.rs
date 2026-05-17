@@ -26,8 +26,8 @@ stylance::import_crate_style!(
 mod model;
 mod sections;
 use model::{
-    TOC_ITEMS, compact_homepage_date, current_homepage_date, homepage_issued_at, latest_now_date,
-    parse_now_toml, recent_items_from_fs, toc_item_meta,
+    TOC_ITEMS, compact_homepage_date, current_homepage_date, latest_now_date, parse_now_toml,
+    recent_items_from_fs, site_last_revised_at, toc_item_meta,
 };
 use sections::{Acknowledgements, Appendices, PageFooter};
 
@@ -70,7 +70,7 @@ pub fn HomePage(route: Memo<RouteFrame>) -> impl IntoView {
 fn HeroHeader() -> impl IntoView {
     let today = current_homepage_date();
     let paper_id = format!("Paper {}", compact_homepage_date(&today));
-    let revised = format!("last revised {}", homepage_issued_at().unwrap_or(today));
+    let revised = format!("last revised {}", site_last_revised_at().unwrap_or(today));
 
     view! {
         <IdentifierStrip>

@@ -1,6 +1,8 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 
+use anyhow::bail;
+
 use crate::CliResult;
 use crate::infra::gh::gh_status;
 
@@ -22,12 +24,11 @@ pub(super) fn push_empty_manifest(repo: &str, branch: &str, path_in_repo: &str) 
         &format!("branch={branch}"),
     ])?;
     if !ok {
-        return Err(format!(
+        bail!(
             "gh api failed pushing bootstrap manifest to {repo}@{branch}/{path_in_repo}; \
              check that `gh auth status` shows an authenticated account with \
              contents:write on this repository"
-        )
-        .into());
+        );
     }
     Ok(())
 }

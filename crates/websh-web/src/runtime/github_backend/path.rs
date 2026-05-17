@@ -3,41 +3,67 @@
 // remain reachable when compiled for wasm32 or under `cargo test`.
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 
-pub fn normalize_repo_prefix(prefix: &str) -> Result<String, String> {
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum RepoPathError {
+    #[error("path must not be empty")]
+    Empty,
+    #[error("path must be repo-relative: {path}")]
+    Absolute { path: String },
+    #[error("path must use forward slashes only: {path}")]
+    Backslash { path: String },
+    #[error("path contains an empty segment: {path}")]
+    EmptySegment { path: String },
+    #[error("path contains traversal segment: {path}")]
+    Traversal { path: String },
+    #[error("path contains a control character: {path}")]
+    ControlCharacter { path: String },
+}
+
+pub fn normalize_repo_prefix(prefix: &str) -> Result<String, RepoPathError> {
     let normalized = prefix.trim_matches('/');
     validate_repo_relative_path(normalized, true)?;
     Ok(normalized.to_string())
 }
 
-pub fn validate_repo_relative_path(path: &str, allow_empty: bool) -> Result<(), String> {
+pub fn validate_repo_relative_path(path: &str, allow_empty: bool) -> Result<(), RepoPathError> {
     if path.is_empty() {
         return if allow_empty {
             Ok(())
         } else {
-            Err("path must not be empty".to_string())
+            Err(RepoPathError::Empty)
         };
     }
     if path.starts_with('/') {
-        return Err(format!("path must be repo-relative: {path}"));
+        return Err(RepoPathError::Absolute {
+            path: path.to_string(),
+        });
     }
     if path.contains('\\') {
-        return Err(format!("path must use forward slashes only: {path}"));
+        return Err(RepoPathError::Backslash {
+            path: path.to_string(),
+        });
     }
     for segment in path.split('/') {
         if segment.is_empty() {
-            return Err(format!("path contains an empty segment: {path}"));
+            return Err(RepoPathError::EmptySegment {
+                path: path.to_string(),
+            });
         }
         if segment == "." || segment == ".." {
-            return Err(format!("path contains traversal segment: {path}"));
+            return Err(RepoPathError::Traversal {
+                path: path.to_string(),
+            });
         }
         if segment.chars().any(char::is_control) {
-            return Err(format!("path contains a control character: {path}"));
+            return Err(RepoPathError::ControlCharacter {
+                path: path.to_string(),
+            });
         }
     }
     Ok(())
 }
 
-pub fn prefixed_repo_path(prefix: &str, path: &str) -> Result<String, String> {
+pub fn prefixed_repo_path(prefix: &str, path: &str) -> Result<String, RepoPathError> {
     let prefix = normalize_repo_prefix(prefix)?;
     let path = path.trim_start_matches('/');
     validate_repo_relative_path(path, false)?;
@@ -48,7 +74,7 @@ pub fn prefixed_repo_path(prefix: &str, path: &str) -> Result<String, String> {
     }
 }
 
-pub fn encoded_repo_relative_path(path: &str, allow_empty: bool) -> Result<String, String> {
+pub fn encoded_repo_relative_path(path: &str, allow_empty: bool) -> Result<String, RepoPathError> {
     validate_repo_relative_path(path, allow_empty)?;
     Ok(path
         .split('/')

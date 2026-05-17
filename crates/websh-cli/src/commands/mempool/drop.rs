@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use anyhow::{Context, bail};
 use clap::Args;
 
 use crate::CliResult;
@@ -24,7 +25,7 @@ pub(super) fn drop_entry(root: &Path, args: DropArgs) -> CliResult {
     require_gh()?;
 
     let entry_path = MempoolEntryPath::parse(&args.path)
-        .map_err(|e| format!("invalid --path `{}`: {e}", args.path))?;
+        .with_context(|| format!("invalid --path `{}`", args.path))?;
     let outcome = drop_via_gh(&mount, entry_path.as_str())?;
     match outcome {
         DropOutcome::Removed { manifest, blob } => {
@@ -39,7 +40,7 @@ pub(super) fn drop_entry(root: &Path, args: DropArgs) -> CliResult {
                 println!("mempool drop: {} not present, nothing to do", entry_path);
                 Ok(())
             } else {
-                Err(format!("entry not found at {}", entry_path).into())
+                bail!("entry not found at {}", entry_path)
             }
         }
     }

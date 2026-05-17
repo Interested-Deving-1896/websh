@@ -10,10 +10,13 @@
 //! `draft_dirty` flag — the user's typed content is never silently
 //! clobbered by re-seeding from `raw_source`.
 
+mod actions;
 mod document;
+mod error;
 mod intent;
 mod keybindings;
 mod meta;
+mod preferences;
 mod shell;
 mod title_block;
 mod toolbar;
@@ -24,17 +27,23 @@ pub use intent::{ReaderFrame, ReaderIntent};
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
-use crate::app::AppContext;
+use crate::app::{AppContext, RuntimeServices};
 use crate::features::mempool::save_raw;
 use crate::platform::current_timestamp;
-use crate::platform::dom::{push_request_path, replace_request_path};
+use crate::platform::dom::{
+    absolute_hash_url_for_request_path, push_request_path, replace_request_path,
+};
 use websh_core::filesystem::{RouteFrame, attestation_route_for_node_path, content_route_for_path};
 use websh_core::mempool::{derive_new_path, placeholder_frontmatter};
 use websh_core::support::format::format_date_iso;
+use websh_core::support::normalize_locale_tag;
 
+use actions::ReaderActionsBindings;
 use document::{ReaderDocument, RendererContent, load_reader_document};
+use error::ReaderLoadError;
 use keybindings::{KeybindingTargets, install_reader_keybindings};
 use meta::{ReaderMeta, reader_meta};
+use preferences::{initial_text_scale, intent_supports_text_scale, persist_text_scale};
 use shell::{ReaderEditBindings, ReaderShell, ReaderShellState};
 use views::{
     AssetReaderView, HtmlReaderView, MarkdownEditorView, MarkdownReaderView, PdfReaderView,
@@ -104,6 +113,7 @@ pub fn Reader(frame: Memo<ReaderFrame>) -> impl IntoView {
     let save_error = RwSignal::new(None::<String>);
     let saving = RwSignal::new(false);
     let refetch_epoch = RwSignal::new(0u32);
+    let text_scale = RwSignal::new(initial_text_scale());
 
     // Author-mode redirect for /new — non-author lands on /ledger.
     Effect::new(move |_| {
@@ -134,10 +144,9 @@ pub fn Reader(frame: Memo<ReaderFrame>) -> impl IntoView {
     let document = LocalResource::new({
         move || {
             let snapshot = frame.get();
-            let path = snapshot.resolution.node_path.clone();
             let intent = snapshot.intent.clone();
             let _ = refetch_epoch.get();
-            async move { load_reader_document(ctx, path, intent).await }
+            async move { load_reader_document(ctx, intent).await }
         }
     });
 
@@ -194,7 +203,7 @@ pub fn Reader(frame: Memo<ReaderFrame>) -> impl IntoView {
             let target = match derive_new_path(&body) {
                 Ok(target) => target,
                 Err(message) => {
-                    save_error.set(Some(message));
+                    save_error.set(Some(message.to_string()));
                     return;
                 }
             };
@@ -213,7 +222,7 @@ pub fn Reader(frame: Memo<ReaderFrame>) -> impl IntoView {
                         save_error.set(None);
                         push_request_path(&content_route_for_path(target_for_nav.as_str()));
                     }
-                    Err(message) => save_error.set(Some(message)),
+                    Err(message) => save_error.set(Some(message.to_string())),
                 }
             });
             return;
@@ -244,7 +253,7 @@ pub fn Reader(frame: Memo<ReaderFrame>) -> impl IntoView {
                     refetch_epoch.update(|n| *n += 1);
                     document.refetch();
                 }
-                Err(message) => save_error.set(Some(message)),
+                Err(message) => save_error.set(Some(message.to_string())),
             }
         });
     };
@@ -265,6 +274,16 @@ pub fn Reader(frame: Memo<ReaderFrame>) -> impl IntoView {
     });
 
     let chrome_route = Memo::new(move |_| RouteFrame::from(frame.get()));
+    let set_preferred_locale = Callback::new(move |locale: String| {
+        let Some(locale) = normalize_locale_tag(&locale) else {
+            return;
+        };
+        if let Err(error) =
+            RuntimeServices::new(ctx).set_env_var(crate::config::LANG_ENV_KEY, &locale)
+        {
+            leptos::logging::warn!("reader: failed to persist LANG preference: {error}");
+        }
+    });
 
     // Mempool drafts are pre-signature; surface a "pending" chip there.
     // Other content paths show a chip only when an attestation exists
@@ -281,6 +300,7 @@ pub fn Reader(frame: Memo<ReaderFrame>) -> impl IntoView {
         attestation_route,
         show_pending,
         save_error: save_error.read_only(),
+        set_preferred_locale,
     };
 
     let edit_bindings = ReaderEditBindings {
@@ -294,8 +314,21 @@ pub fn Reader(frame: Memo<ReaderFrame>) -> impl IntoView {
         on_cancel: on_cancel_cb,
     };
 
+    let actions_bindings = ReaderActionsBindings {
+        visible: Signal::derive(move || mode.get() == ReaderMode::View),
+        text_scalable: Signal::derive(move || intent_supports_text_scale(&intent_memo.get())),
+        text_scale: text_scale.read_only(),
+        set_text_scale: Callback::new(move |scale| {
+            text_scale.set(scale);
+            persist_text_scale(scale);
+        }),
+        share_url: Signal::derive(move || {
+            absolute_hash_url_for_request_path(&frame.get().request.url_path)
+        }),
+    };
+
     view! {
-        <ReaderShell state=shell_state edit=edit_bindings>
+        <ReaderShell state=shell_state edit=edit_bindings actions=actions_bindings>
             <Show
                 when=move || mode.get() == ReaderMode::Edit
                 fallback=move || view! {
@@ -319,10 +352,13 @@ pub fn Reader(frame: Memo<ReaderFrame>) -> impl IntoView {
     }
 }
 
-fn render_view_body(result: Result<ReaderDocument, String>, meta: Memo<ReaderMeta>) -> AnyView {
+fn render_view_body(
+    result: Result<ReaderDocument, ReaderLoadError>,
+    meta: Memo<ReaderMeta>,
+) -> AnyView {
     let document = match result {
         Ok(document) => document,
-        Err(error) => return view! { <div class=css::error>{error}</div> }.into_any(),
+        Err(error) => return view! { <div class=css::error>{error.to_string()}</div> }.into_any(),
     };
 
     match document.content {

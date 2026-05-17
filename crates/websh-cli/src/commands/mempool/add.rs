@@ -1,6 +1,7 @@
 use std::io;
 use std::path::Path;
 
+use anyhow::{Context, bail};
 use clap::Args;
 
 use websh_core::mempool::{
@@ -56,19 +57,20 @@ pub(super) fn add(root: &Path, args: AddArgs) -> CliResult {
     let errors = validate_form(&form);
     if !errors.is_empty() {
         let messages: Vec<String> = errors.iter().map(humanize_compose_error).collect();
-        return Err(format!("invalid input:\n  - {}", messages.join("\n  - ")).into());
+        bail!("invalid input:\n  - {}", messages.join("\n  - "));
     }
 
     let repo_path = format!("{}/{}.md", form.category, form.slug);
     let entry_path = MempoolEntryPath::parse(&repo_path)
-        .map_err(|e| format!("invalid mempool entry path `{repo_path}`: {e}"))?;
+        .with_context(|| format!("invalid mempool entry path `{repo_path}`"))?;
     match gh_path_status(&mount, entry_path.as_str())? {
         GhResourceStatus::Exists => {
-            return Err(format!(
+            bail!(
                 "{} already exists in {}@{} — pass a different --slug or edit via the browser",
-                entry_path, mount.repo, mount.branch
-            )
-            .into());
+                entry_path,
+                mount.repo,
+                mount.branch
+            );
         }
         GhResourceStatus::Missing => {}
     }
@@ -92,10 +94,10 @@ pub(super) fn add(root: &Path, args: AddArgs) -> CliResult {
 fn read_body_source(spec: &str) -> CliResult<String> {
     if spec == "-" {
         let mut buf = String::new();
-        io::Read::read_to_string(&mut io::stdin(), &mut buf)?;
+        io::Read::read_to_string(&mut io::stdin(), &mut buf).context("read body from stdin")?;
         Ok(buf)
     } else {
-        Ok(std::fs::read_to_string(spec)?)
+        std::fs::read_to_string(spec).with_context(|| format!("read body from {spec}"))
     }
 }
 

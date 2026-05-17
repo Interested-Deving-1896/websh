@@ -1,9 +1,10 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use anyhow::{Context, bail};
 use websh_core::attestation::artifact::{
-    AttestationArtifact, DocumentSubject, Envelope, HomepageSubject, LedgerSubject, PageSubject,
-    Subject,
+    AttestationArtifact, BundleSubject, ContentFile, DocumentSubject, Envelope, HomepageSubject,
+    LedgerSubject, PageSubject, Subject,
 };
 use websh_core::attestation::ledger::ContentLedger;
 use websh_site::PUBLIC_KEY_PATH;
@@ -25,22 +26,54 @@ pub(in crate::workflows::attest) fn build_subject(
     ledger: Option<&ContentLedger>,
 ) -> CliResult<Subject> {
     let content_files = build_content_files(root, &content_paths)?;
-    let issued_at = issued_at
-        .or_else(|| {
-            existing
-                .subject_for_route(&route)
-                .map(|subject| subject.issued_at().to_string())
-        })
-        .unwrap_or_else(today_utc);
+    let prior = existing.subject_for_route(&route);
 
+    if issued_at.is_none()
+        && let Some(prior) = prior
+    {
+        let subject = build_unattested_subject(
+            root,
+            kind,
+            route.clone(),
+            prior.issued_at().to_string(),
+            content_files.clone(),
+            ledger,
+        )?;
+        if subject_matches_prior(prior, &subject) {
+            return Ok(with_prior_attestations(subject, prior));
+        }
+    }
+
+    let issued_at = issued_at.unwrap_or_else(today_utc);
+    let subject = build_unattested_subject(root, kind, route, issued_at, content_files, ledger)?;
+
+    Ok(if let Some(prior) = prior {
+        if subject_matches_prior(prior, &subject) {
+            with_prior_attestations(subject, prior)
+        } else {
+            subject
+        }
+    } else {
+        subject
+    })
+}
+
+fn build_unattested_subject(
+    root: &Path,
+    kind: SubjectKind,
+    route: String,
+    issued_at: String,
+    content_files: Vec<ContentFile>,
+    ledger: Option<&ContentLedger>,
+) -> CliResult<Subject> {
     let env = Envelope {
-        route: route.clone(),
+        route,
         issued_at,
         content_files,
         attestations: Vec::new(),
     };
 
-    let mut subject = match kind {
+    let subject = match kind {
         SubjectKind::Homepage => {
             let ack = read_ack(root)?;
             Subject::Homepage(HomepageSubject {
@@ -50,7 +83,7 @@ pub(in crate::workflows::attest) fn build_subject(
         }
         SubjectKind::Ledger => {
             let ledger =
-                ledger.ok_or("ledger subject requires a ContentLedger to bind chain_head")?;
+                ledger.context("ledger subject requires a ContentLedger to bind chain_head")?;
             Subject::Ledger(LedgerSubject {
                 env,
                 chain_head: ledger.chain_head.clone(),
@@ -58,19 +91,24 @@ pub(in crate::workflows::attest) fn build_subject(
         }
         SubjectKind::Document => Subject::Document(DocumentSubject { env }),
         SubjectKind::Page => Subject::Page(PageSubject { env }),
+        SubjectKind::Bundle => Subject::Bundle(BundleSubject { env }),
     };
 
-    if let Some(prior) = existing.subject_for_route(&route)
-        && let (Ok(prior_msg), Ok(new_msg)) =
-            (prior.canonical_message(), subject.canonical_message())
-        && prior_msg == new_msg
-    {
-        subject
-            .attestations_mut()
-            .extend(prior.attestations().iter().cloned());
-    }
-
     Ok(subject)
+}
+
+fn subject_matches_prior(prior: &Subject, subject: &Subject) -> bool {
+    match (prior.canonical_message(), subject.canonical_message()) {
+        (Ok(prior_msg), Ok(new_msg)) => prior_msg == new_msg,
+        _ => false,
+    }
+}
+
+fn with_prior_attestations(mut subject: Subject, prior: &Subject) -> Subject {
+    subject
+        .attestations_mut()
+        .extend(prior.attestations().iter().cloned());
+    subject
 }
 
 pub(in crate::workflows::attest) fn content_paths_or_default(
@@ -81,7 +119,7 @@ pub(in crate::workflows::attest) fn content_paths_or_default(
 ) -> CliResult<Vec<PathBuf>> {
     let raw = if paths.is_empty() {
         if !matches!(kind, SubjectKind::Homepage) || route != "/" {
-            return Err("non-homepage subjects require at least one --content path".into());
+            bail!("non-homepage subjects require at least one --content path");
         }
         let mut defaults = DEFAULT_HOMEPAGE_CONTENT
             .iter()
@@ -127,7 +165,7 @@ fn expand_content_paths(root: &Path, raw_paths: Vec<PathBuf>) -> CliResult<Vec<P
                 expanded.push(path);
             }
         } else {
-            return Err(format!("attestation content path not found: {}", path.display()).into());
+            bail!("attestation content path not found: {}", path.display());
         }
     }
     Ok(expanded)

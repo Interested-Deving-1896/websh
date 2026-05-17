@@ -10,6 +10,7 @@ use websh_core::ports::StorageBackendRef;
 use websh_core::runtime as core_runtime;
 use websh_site::BOOTSTRAP_SITE;
 
+use super::error::RuntimeLoadError;
 use super::github_backend;
 use super::mounts::{MountLoadSet, MountLoadStatus, MountScanJob, MountScanResult};
 
@@ -52,7 +53,7 @@ pub fn bootstrap_runtime_load() -> RuntimeLoad {
     }
 }
 
-pub async fn load_runtime() -> Result<RuntimeLoad, String> {
+pub async fn load_runtime() -> Result<RuntimeLoad, RuntimeLoadError> {
     let mut backends = bootstrap_backends();
     let roots: Vec<_> = backends.keys().cloned().collect();
     let mut scans = Vec::new();
@@ -66,12 +67,15 @@ pub async fn load_runtime() -> Result<RuntimeLoad, String> {
         let scan = backend
             .scan()
             .await
-            .map_err(|error| format!("mount {}: {error}", mount_label_for_root(&root)))?;
+            .map_err(|source| RuntimeLoadError::BootstrapMount {
+                label: mount_label_for_root(&root),
+                source,
+            })?;
         scans.push((root, scan));
     }
 
     let mut global_fs = core_runtime::assemble_global_fs(&scans)
-        .map_err(|error| format!("assemble global filesystem: {error:?}"))?;
+        .map_err(|source| RuntimeLoadError::AssembleGlobalFs { source })?;
     let root_total_files = count_files(&global_fs, &VirtualPath::root());
     let mut mounts = MountLoadSet::empty();
     for mount in bootstrap_runtime_mounts() {
@@ -89,12 +93,12 @@ pub async fn load_runtime() -> Result<RuntimeLoad, String> {
     })
 }
 
-pub async fn reload_runtime() -> Result<RuntimeLoad, String> {
+pub async fn reload_runtime() -> Result<RuntimeLoad, RuntimeLoadError> {
     load_runtime().await
 }
 
 pub async fn scan_mount(job: MountScanJob) -> MountScanResult {
-    let scan = job.backend.scan().await.map_err(|error| error.to_string());
+    let scan = job.backend.scan().await;
     MountScanResult {
         mount: job.mount,
         backend: job.backend,
@@ -107,7 +111,7 @@ async fn apply_runtime_conventions(
     global: &mut GlobalFs,
     backends: &mut BackendRegistry,
     mounts: &mut MountLoadSet,
-) -> Result<(), String> {
+) -> Result<(), RuntimeLoadError> {
     core_runtime::seed_bootstrap_routes(global);
     load_site_json_if_present(global, backends).await?;
 
@@ -135,7 +139,7 @@ async fn apply_runtime_conventions(
         mounts,
         load_mount_declarations(global, backends).await?,
         &bootstrap_roots,
-    )?;
+    );
 
     load_route_index(global, backends).await?;
     core_runtime::seed_bootstrap_routes(global);
@@ -147,6 +151,16 @@ struct ExternalMountCandidate {
     mount: RuntimeMount,
     backend: Option<StorageBackendRef>,
     build_error: Option<String>,
+}
+
+struct FailedMountDeclaration {
+    mount: RuntimeMount,
+    error: String,
+}
+
+enum LoadedMountDeclaration {
+    Parsed(MountDeclaration),
+    Failed(FailedMountDeclaration),
 }
 
 #[derive(Clone)]
@@ -165,10 +179,10 @@ fn register_external_mounts(
     global: &mut GlobalFs,
     backends: &mut BackendRegistry,
     mounts: &mut MountLoadSet,
-    declarations: Vec<MountDeclaration>,
+    declarations: Vec<LoadedMountDeclaration>,
     bootstrap_roots: &[VirtualPath],
-) -> Result<(), String> {
-    let candidates = external_mount_candidates(declarations, bootstrap_roots)?;
+) {
+    let candidates = external_mount_candidates(declarations, bootstrap_roots);
     let rejected_by_order = rejected_mount_candidates(&candidates);
 
     for candidate in candidates {
@@ -193,7 +207,7 @@ fn register_external_mounts(
             continue;
         };
         if let Err(error) = global.reserve_mount_point(candidate.mount.root.clone()) {
-            mounts.insert_failed(candidate.mount, format!("{error:?}"));
+            mounts.insert_failed(candidate.mount, error.to_string());
             continue;
         }
 
@@ -202,38 +216,63 @@ fn register_external_mounts(
     }
 
     reserve_failed_mount_points(global, mounts);
-    Ok(())
 }
 
 fn external_mount_candidates(
-    declarations: Vec<MountDeclaration>,
+    declarations: Vec<LoadedMountDeclaration>,
     bootstrap_roots: &[VirtualPath],
-) -> Result<Vec<ExternalMountCandidate>, String> {
+) -> Vec<ExternalMountCandidate> {
     let mut out = Vec::new();
     for (order, declaration) in declarations.into_iter().enumerate() {
-        let mount_root = VirtualPath::from_absolute(declaration.mount_at.clone())
-            .map_err(|_| format!("invalid mount_at: {}", declaration.mount_at))?;
-        if bootstrap_roots.iter().any(|root| root == &mount_root) {
-            continue;
-        }
+        match declaration {
+            LoadedMountDeclaration::Parsed(declaration) => {
+                let mount_root = match VirtualPath::from_absolute(declaration.mount_at.clone()) {
+                    Ok(root) => root,
+                    Err(error) => {
+                        leptos::logging::warn!(
+                            "runtime: ignoring mount declaration with invalid mount_at `{}`: {error}",
+                            declaration.mount_at
+                        );
+                        continue;
+                    }
+                };
+                if bootstrap_roots.iter().any(|root| root == &mount_root) {
+                    continue;
+                }
 
-        match github_backend::build_backend_for_declaration(&declaration) {
-            Ok(Some((mount, backend))) => out.push(ExternalMountCandidate {
-                order,
-                mount,
-                backend: Some(backend),
-                build_error: None,
-            }),
-            Ok(None) => {}
-            Err(error) => out.push(ExternalMountCandidate {
-                order,
-                mount: fallback_mount_for_declaration(&declaration, mount_root),
-                backend: None,
-                build_error: Some(error),
-            }),
+                match github_backend::build_backend_for_declaration(&declaration) {
+                    Ok(Some((mount, backend))) => out.push(ExternalMountCandidate {
+                        order,
+                        mount,
+                        backend: Some(backend),
+                        build_error: None,
+                    }),
+                    Ok(None) => {}
+                    Err(error) => out.push(ExternalMountCandidate {
+                        order,
+                        mount: fallback_mount_for_declaration(&declaration, mount_root),
+                        backend: None,
+                        build_error: Some(error.to_string()),
+                    }),
+                }
+            }
+            LoadedMountDeclaration::Failed(failed) => {
+                if bootstrap_roots
+                    .iter()
+                    .any(|root| root == &failed.mount.root)
+                {
+                    continue;
+                }
+                out.push(ExternalMountCandidate {
+                    order,
+                    mount: failed.mount,
+                    backend: None,
+                    build_error: Some(failed.error),
+                });
+            }
         }
     }
-    Ok(out)
+    out
 }
 
 fn rejected_mount_candidates(
@@ -327,7 +366,7 @@ fn mount_label_for_root(root: &VirtualPath) -> String {
 async fn load_site_json_if_present(
     global: &GlobalFs,
     backends: &BackendRegistry,
-) -> Result<(), String> {
+) -> Result<(), RuntimeLoadError> {
     let path = VirtualPath::from_absolute("/.websh/site.json").expect("constant path");
     if !global.exists(&path) {
         return Ok(());
@@ -338,15 +377,17 @@ async fn load_site_json_if_present(
         return Ok(());
     };
     let body = read_backend_text(site_backend, &site_root, &path).await?;
-    let _: Value =
-        serde_json::from_str(&body).map_err(|error| format!("parse {}: {error}", path.as_str()))?;
+    let _: Value = serde_json::from_str(&body).map_err(|source| RuntimeLoadError::ParseJson {
+        path: path.clone(),
+        source,
+    })?;
     Ok(())
 }
 
 async fn load_mount_declarations(
     global: &GlobalFs,
     backends: &BackendRegistry,
-) -> Result<Vec<MountDeclaration>, String> {
+) -> Result<Vec<LoadedMountDeclaration>, RuntimeLoadError> {
     let site_root = BOOTSTRAP_SITE.mount_root();
     let mounts_root = VirtualPath::from_absolute("/.websh/mounts").expect("constant path");
     let Some(site_backend) = backends.get(&site_root) else {
@@ -363,12 +404,72 @@ async fn load_mount_declarations(
         }
 
         let body = read_backend_text(site_backend, &site_root, &entry.path).await?;
-        let declaration: MountDeclaration = serde_json::from_str(&body)
-            .map_err(|error| format!("parse {}: {error}", entry.path.as_str()))?;
-        declarations.push(declaration);
+        match serde_json::from_str::<MountDeclaration>(&body) {
+            Ok(declaration) => declarations.push(LoadedMountDeclaration::Parsed(declaration)),
+            Err(source) => {
+                if let Some(failed) = recover_failed_mount_declaration(&entry.path, &body, &source)
+                {
+                    declarations.push(LoadedMountDeclaration::Failed(failed));
+                } else {
+                    leptos::logging::warn!(
+                        "runtime: ignoring mount declaration {}: {source}",
+                        entry.path.as_str()
+                    );
+                }
+            }
+        }
     }
 
     Ok(declarations)
+}
+
+fn recover_failed_mount_declaration(
+    path: &VirtualPath,
+    body: &str,
+    source: &serde_json::Error,
+) -> Option<FailedMountDeclaration> {
+    let value: Value = match serde_json::from_str(body) {
+        Ok(value) => value,
+        Err(error) => {
+            leptos::logging::warn!(
+                "runtime: ignoring malformed mount declaration {}: {error}",
+                path.as_str()
+            );
+            return None;
+        }
+    };
+
+    let backend = value.get("backend").and_then(Value::as_str);
+    if backend != Some("github") {
+        return None;
+    }
+
+    let mount_at = value.get("mount_at").and_then(Value::as_str)?;
+    let mount_root = match VirtualPath::from_absolute(mount_at.to_string()) {
+        Ok(root) => root,
+        Err(error) => {
+            leptos::logging::warn!(
+                "runtime: ignoring mount declaration {} with invalid mount_at `{mount_at}`: {error}",
+                path.as_str()
+            );
+            return None;
+        }
+    };
+    let label = value
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|name| !name.trim().is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| mount_label_for_root(&mount_root));
+    let writable = value
+        .get("writable")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+
+    Some(FailedMountDeclaration {
+        mount: RuntimeMount::new(mount_root, label, RuntimeBackendKind::GitHub, writable),
+        error: format!("parse {}: {source}", path.as_str()),
+    })
 }
 
 // Sidecar metadata is no longer fetched at runtime. The CLI
@@ -378,7 +479,10 @@ async fn load_mount_declarations(
 // per-file `.meta.json` fetches (and the rate-limit failures they were
 // prone to).
 
-async fn load_route_index(global: &mut GlobalFs, backends: &BackendRegistry) -> Result<(), String> {
+async fn load_route_index(
+    global: &mut GlobalFs,
+    backends: &BackendRegistry,
+) -> Result<(), RuntimeLoadError> {
     let site_root = BOOTSTRAP_SITE.mount_root();
     let index_path = VirtualPath::from_absolute("/.websh/index.json").expect("constant path");
     let Some(site_backend) = backends.get(&site_root) else {
@@ -391,8 +495,11 @@ async fn load_route_index(global: &mut GlobalFs, backends: &BackendRegistry) -> 
     }
 
     let body = read_backend_text(site_backend, &site_root, &index_path).await?;
-    let index: DerivedIndex = serde_json::from_str(&body)
-        .map_err(|error| format!("parse {}: {error}", index_path.as_str()))?;
+    let index: DerivedIndex =
+        serde_json::from_str(&body).map_err(|source| RuntimeLoadError::ParseJson {
+            path: index_path.clone(),
+            source,
+        })?;
     global.replace_route_index(index.routes);
     Ok(())
 }
@@ -401,14 +508,20 @@ async fn read_backend_text(
     backend: &StorageBackendRef,
     mount_root: &VirtualPath,
     path: &VirtualPath,
-) -> Result<String, String> {
-    let rel_path = path
-        .strip_prefix(mount_root)
-        .ok_or_else(|| format!("{} outside {}", path.as_str(), mount_root.as_str()))?;
+) -> Result<String, RuntimeLoadError> {
+    let rel_path =
+        path.strip_prefix(mount_root)
+            .ok_or_else(|| RuntimeLoadError::PathOutsideMount {
+                path: path.clone(),
+                mount_root: mount_root.clone(),
+            })?;
     backend
         .read_text(rel_path)
         .await
-        .map_err(|error| format!("read {}: {error}", path.as_str()))
+        .map_err(|source| RuntimeLoadError::Read {
+            path: path.clone(),
+            source,
+        })
 }
 
 fn collect_file_paths(global: &GlobalFs, root: &VirtualPath) -> Vec<VirtualPath> {
@@ -461,9 +574,9 @@ mod tests {
         let mut backends = BTreeMap::new();
         let mut mounts = MountLoadSet::empty();
         let declarations = vec![
-            declaration("/db", "db"),
-            declaration("/db", "db-duplicate"),
-            declaration("/db/sub", "db-sub"),
+            LoadedMountDeclaration::Parsed(declaration("/db", "db")),
+            LoadedMountDeclaration::Parsed(declaration("/db", "db-duplicate")),
+            LoadedMountDeclaration::Parsed(declaration("/db/sub", "db-sub")),
         ];
 
         register_external_mounts(
@@ -472,8 +585,7 @@ mod tests {
             &mut mounts,
             declarations,
             &[VirtualPath::root()],
-        )
-        .expect("declarations should be best-effort");
+        );
 
         let db = VirtualPath::from_absolute("/db").expect("db");
         let nested = VirtualPath::from_absolute("/db/sub").expect("nested");
@@ -493,5 +605,45 @@ mod tests {
         assert_eq!(failures.len(), 2);
         assert!(failures.iter().any(|entry| entry.declared.root == db));
         assert!(failures.iter().any(|entry| entry.declared.root == nested));
+    }
+
+    #[wasm_bindgen_test]
+    fn missing_required_writable_becomes_failed_mount_declaration() {
+        let path = VirtualPath::from_absolute("/.websh/mounts/db.mount.json").expect("path");
+        let body = r#"{
+            "backend": "github",
+            "mount_at": "/db",
+            "repo": "0xwonj/db",
+            "branch": "main",
+            "root": "content"
+        }"#;
+        let source = serde_json::from_str::<MountDeclaration>(body).unwrap_err();
+        let failed = recover_failed_mount_declaration(&path, body, &source)
+            .expect("github declaration with mount_at can be represented as failed");
+
+        assert_eq!(failed.mount.root.as_str(), "/db");
+        assert_eq!(failed.mount.label, "db");
+        assert!(!failed.mount.writable);
+        assert!(failed.error.contains("missing field `writable`"));
+
+        let mut global = GlobalFs::empty();
+        let mut backends = BTreeMap::new();
+        let mut mounts = MountLoadSet::empty();
+        register_external_mounts(
+            &mut global,
+            &mut backends,
+            &mut mounts,
+            vec![LoadedMountDeclaration::Failed(failed)],
+            &[VirtualPath::root()],
+        );
+
+        let db = VirtualPath::from_absolute("/db").expect("db");
+        assert!(matches!(
+            mounts.status(&db),
+            Some(MountLoadStatus::Failed { ref error, .. })
+                if error.contains("missing field `writable`")
+        ));
+        assert!(global.is_directory(&db));
+        assert!(backends.is_empty());
     }
 }

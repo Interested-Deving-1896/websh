@@ -61,7 +61,7 @@ use websh_core::domain::VirtualPath;
 use websh_core::filesystem::FsEngine;
 use websh_core::filesystem::{
     RenderIntent, ResolvedKind, RouteFrame, RouteRequest, RouteResolution, RouteSurface,
-    is_new_request_path,
+    build_render_intent_with_preferred_locale, is_new_request_path,
 };
 
 /// Main application router.
@@ -111,7 +111,14 @@ pub fn RouterView() -> impl IntoView {
             ctx.view_global_fs.get()
         };
         let resolution = fs.resolve_route(&request)?;
-        let intent = fs.build_render_intent(&resolution)?;
+        let preferred_locale = ctx
+            .runtime_state
+            .with(|state| state.env.get(crate::config::LANG_ENV_KEY).cloned());
+        let intent = build_render_intent_with_preferred_locale(
+            &fs,
+            &resolution,
+            preferred_locale.as_deref(),
+        )?;
         Some(RouteFrame {
             request,
             resolution,
@@ -159,6 +166,7 @@ pub fn RouterView() -> impl IntoView {
                         | RenderIntent::MarkdownContent { .. }
                         | RenderIntent::PlainContent { .. }
                         | RenderIntent::Asset { .. }
+                        | RenderIntent::BundleVariant { .. }
                         | RenderIntent::Redirect { .. } => {
                             let reader_frame = ReaderFrame::try_from(frame)
                                 .expect("non-surface RenderIntent variants convert to ReaderFrame");

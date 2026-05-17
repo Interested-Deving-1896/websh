@@ -4,8 +4,14 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 
 use thiserror::Error;
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::JsValue;
 
-use crate::config::{DEFAULT_USER_VARS, USER_VAR_PREFIX, WALLET_SESSION_KEY};
+use crate::config::{
+    DEFAULT_LANG, DEFAULT_USER_VARS, LANG_ENV_KEY, USER_VAR_PREFIX, WALLET_SESSION_KEY,
+};
+#[cfg(target_arch = "wasm32")]
+use websh_core::support::normalize_locale_tag;
 
 pub use websh_core::runtime::RuntimeStateSnapshot;
 
@@ -106,6 +112,10 @@ pub fn unset_env_var(key: &str) -> Result<RuntimeStateSnapshot, EnvironmentError
 }
 
 pub fn init_default_env() {
+    if get_env_var(LANG_ENV_KEY).is_none() {
+        let _ = set_env_var(LANG_ENV_KEY, &browser_default_lang());
+    }
+
     for (key, value) in DEFAULT_USER_VARS {
         if get_env_var(key).is_none() {
             let _ = set_env_var(key, value);
@@ -235,6 +245,47 @@ fn persist_wallet_session(active: bool) -> Result<(), EnvironmentError> {
             .remove_item(WALLET_SESSION_KEY)
             .map_err(|_| EnvironmentError::RemoveFailed)
     }
+}
+
+fn browser_default_lang() -> String {
+    #[cfg(target_arch = "wasm32")]
+    {
+        for candidate in browser_language_candidates() {
+            if let Some(locale) = normalize_locale_tag(&candidate) {
+                return locale;
+            }
+        }
+    }
+
+    DEFAULT_LANG.to_string()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn browser_language_candidates() -> Vec<String> {
+    let Some(navigator) = web_sys::window().map(|window| window.navigator()) else {
+        return Vec::new();
+    };
+    let navigator = JsValue::from(navigator);
+    let mut values = Vec::new();
+
+    if let Ok(languages) = js_sys::Reflect::get(&navigator, &JsValue::from_str("languages"))
+        && js_sys::Array::is_array(&languages)
+    {
+        let languages = js_sys::Array::from(&languages);
+        for language in languages.iter() {
+            if let Some(language) = language.as_string() {
+                values.push(language);
+            }
+        }
+    }
+
+    if let Ok(language) = js_sys::Reflect::get(&navigator, &JsValue::from_str("language"))
+        && let Some(language) = language.as_string()
+    {
+        values.push(language);
+    }
+
+    values
 }
 
 fn local_storage() -> Option<web_sys::Storage> {

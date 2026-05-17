@@ -54,7 +54,7 @@ impl MockBackend {
         Self {
             commit_calls: Mutex::new(vec![]),
             next_outcome: Mutex::new(Some(Err(StorageError::Conflict {
-                remote_head: head.into(),
+                remote_head: Some(head.into()),
             }))),
             next_scan: Mutex::new(Some(Ok(ScannedSubtree::default()))),
             mount_root: VirtualPath::root(),
@@ -78,11 +78,19 @@ impl StorageBackend for MockBackend {
     }
 
     fn read_text<'a>(&'a self, _rel_path: &'a str) -> LocalBoxFuture<'a, StorageResult<String>> {
-        Box::pin(async move { Err(StorageError::NotFound("mock.read_text".into())) })
+        Box::pin(async move {
+            Err(StorageError::NotFound {
+                path: "mock.read_text".into(),
+            })
+        })
     }
 
     fn read_bytes<'a>(&'a self, _rel_path: &'a str) -> LocalBoxFuture<'a, StorageResult<Vec<u8>>> {
-        Box::pin(async move { Err(StorageError::NotFound("mock.read_bytes".into())) })
+        Box::pin(async move {
+            Err(StorageError::NotFound {
+                path: "mock.read_bytes".into(),
+            })
+        })
     }
 
     fn commit<'a>(
@@ -103,7 +111,11 @@ impl StorageBackend for MockBackend {
                 .lock()
                 .unwrap()
                 .take()
-                .unwrap_or_else(|| Err(StorageError::BadRequest("no outcome queued".into())))?;
+                .unwrap_or_else(|| {
+                    Err(StorageError::InvalidRequest {
+                        message: "no outcome queued".into(),
+                    })
+                })?;
             if outcome.committed_paths.is_empty() {
                 outcome.committed_paths = request.cleanup_paths.clone();
             }

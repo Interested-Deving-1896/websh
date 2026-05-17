@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use anyhow::{anyhow, bail};
 use websh_core::crypto::ack::short_hash;
 use websh_site::ATTESTATIONS_PATH;
 
@@ -74,9 +75,8 @@ fn subject_set(
 ) -> CliResult {
     let kind = SubjectKind::parse(&kind)?;
     if matches!(kind, SubjectKind::Ledger) {
-        return Err(
+        bail!(
             "ledger subjects are only built by `attest`; chain_head depends on the regenerated ledger artifact"
-                .into(),
         );
     }
     let content_paths = content_paths_or_default(root, &route, kind, content_paths)?;
@@ -108,7 +108,7 @@ fn subject_message(root: &Path, route: String) -> CliResult {
     artifact.validate_header()?;
     let subject = artifact
         .subject_for_route(&route)
-        .ok_or_else(|| format!("attestation subject not found for route {route}"))?;
+        .ok_or_else(|| anyhow!("attestation subject not found for route {route}"))?;
     subject.validate()?;
     let message = subject.canonical_message()?;
     println!("{message}");

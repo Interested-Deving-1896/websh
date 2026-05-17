@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use anyhow::{Context, bail};
 use regex::Regex;
 
 use crate::CliResult;
@@ -43,11 +44,10 @@ pub(super) fn pinata(
 
     let dist_path = root.join(&dist_dir);
     if !dist_path.is_dir() {
-        return Err(format!(
+        bail!(
             "upload directory does not exist: {}. Run without --no-build or check --dist-dir.",
             dist_path.display()
-        )
-        .into());
+        );
     }
 
     let upload_name = name.unwrap_or_else(default_upload_name);
@@ -71,8 +71,8 @@ pub(super) fn pinata(
     }
 
     let cid = extract_cid(&format!("{}\n{}", output.stdout, output.stderr))
-        .ok_or("failed to extract CID from Pinata output")?;
-    fs::write(root.join(".last-cid"), format!("{cid}\n"))?;
+        .context("failed to extract CID from Pinata output")?;
+    fs::write(root.join(".last-cid"), format!("{cid}\n")).context("write .last-cid")?;
 
     let gateway = gateway.trim_end_matches('/');
 

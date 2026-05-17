@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
+use anyhow::{Context, bail};
 use serde::Serialize;
 
 use crate::CliResult;
@@ -51,21 +52,21 @@ struct MountFile {
 pub(crate) fn init_mount(root: &Path, init: MountInitOptions) -> CliResult<MountInitOutcome> {
     require_gh()?;
     let mount_name = MountName::from_str(&init.name)
-        .map_err(|e| format!("invalid --name `{}`: {e}", init.name))?;
+        .with_context(|| format!("invalid --name `{}`", init.name))?;
     websh_core::domain::VirtualPath::from_absolute(init.mount_at.clone())
-        .map_err(|e| format!("invalid --mount-at `{}`: {e}", init.mount_at))?;
+        .with_context(|| format!("invalid --mount-at `{}`", init.mount_at))?;
     let root_prefix = RepoRootPrefix::from_str(&init.root)
-        .map_err(|e| format!("invalid --root `{}`: {e}", init.root))?;
+        .with_context(|| format!("invalid --root `{}`", init.root))?;
 
     match gh_resource_status(["api", &format!("repos/{}", init.repo), "--silent"])? {
         GhResourceStatus::Exists => {}
         GhResourceStatus::Missing => {
-            return Err(format!(
+            bail!(
                 "github repo {} not found - create it first with `gh repo create {}` \
                  (or via the web UI), then re-run this command",
-                init.repo, init.repo,
-            )
-            .into());
+                init.repo,
+                init.repo,
+            );
         }
     }
 
@@ -97,10 +98,13 @@ pub(crate) fn init_mount(root: &Path, init: MountInitOptions) -> CliResult<Mount
     };
     let mount_decl_path = mount_declaration_path(root, &mount_name);
     if let Some(parent) = mount_decl_path.parent() {
-        std::fs::create_dir_all(parent)?;
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("create directory {}", parent.display()))?;
     }
-    let body = serde_json::to_string_pretty(&mount_file)?;
-    std::fs::write(&mount_decl_path, format!("{body}\n"))?;
+    let body =
+        serde_json::to_string_pretty(&mount_file).context("serialize mount declaration json")?;
+    std::fs::write(&mount_decl_path, format!("{body}\n"))
+        .with_context(|| format!("write {}", mount_decl_path.display()))?;
 
     let bundle = sync_content(root, Path::new(DEFAULT_CONTENT_DIR))?;
 
@@ -173,28 +177,19 @@ impl std::fmt::Display for MountName {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 enum MountNameError {
+    #[error("mount name is empty")]
     Empty,
+    #[error("mount name cannot be . or ..")]
     Traversal,
+    #[error("mount name cannot contain path separators")]
     Separator,
+    #[error("mount name is too long")]
     TooLong,
+    #[error("mount name must match [a-z0-9][a-z0-9_-]*")]
     InvalidCharacter,
 }
-
-impl std::fmt::Display for MountNameError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Empty => write!(f, "mount name is empty"),
-            Self::Traversal => write!(f, "mount name cannot be . or .."),
-            Self::Separator => write!(f, "mount name cannot contain path separators"),
-            Self::TooLong => write!(f, "mount name is too long"),
-            Self::InvalidCharacter => write!(f, "mount name must match [a-z0-9][a-z0-9_-]*"),
-        }
-    }
-}
-
-impl std::error::Error for MountNameError {}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct RepoRootPrefix(String);
@@ -243,28 +238,17 @@ impl std::fmt::Display for RepoRootPrefix {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 enum RepoRootPrefixError {
+    #[error("repo root prefix contains an empty segment")]
     EmptySegment,
+    #[error("repo root prefix cannot contain . or ..")]
     Traversal,
+    #[error("repo root prefix cannot contain backslashes")]
     Backslash,
+    #[error("repo root prefix cannot contain control characters")]
     ControlCharacter,
 }
-
-impl std::fmt::Display for RepoRootPrefixError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::EmptySegment => write!(f, "repo root prefix contains an empty segment"),
-            Self::Traversal => write!(f, "repo root prefix cannot contain . or .."),
-            Self::Backslash => write!(f, "repo root prefix cannot contain backslashes"),
-            Self::ControlCharacter => {
-                write!(f, "repo root prefix cannot contain control characters")
-            }
-        }
-    }
-}
-
-impl std::error::Error for RepoRootPrefixError {}
 
 #[cfg(test)]
 mod tests {

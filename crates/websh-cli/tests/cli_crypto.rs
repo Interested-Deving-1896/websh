@@ -511,6 +511,41 @@ fn cli_attest_default_discovers_content_dir_and_manifest() {
 }
 
 #[test]
+fn cli_attest_default_updates_existing_subject_issued_at_when_content_changes() {
+    let root = temp_root("attest-default-refresh-date");
+    write_homepage_content(&root);
+    fs::create_dir_all(root.join("content/writing")).unwrap();
+    fs::write(
+        root.join("content/writing/hello.md"),
+        "---\ntitle: Hello\n---\nfirst body",
+    )
+    .unwrap();
+
+    cli(&root, &["attest", "--no-sign", "--issued-at", "2000-01-01"]);
+
+    fs::write(
+        root.join("content/writing/hello.md"),
+        "---\ntitle: Hello\n---\nrevised body",
+    )
+    .unwrap();
+    cli(&root, &["attest", "--no-sign"]);
+
+    let artifact: AttestationArtifact =
+        serde_json::from_str(&fs::read_to_string(root.join(ATTESTATIONS_PATH)).unwrap()).unwrap();
+    assert_eq!(
+        artifact.subject_for_route("/").unwrap().issued_at(),
+        "2000-01-01"
+    );
+    assert_ne!(
+        artifact
+            .subject_for_route("/writing/hello")
+            .unwrap()
+            .issued_at(),
+        "2000-01-01"
+    );
+}
+
+#[test]
 fn cli_content_manifest_generates_manifest_without_attestation() {
     let root = temp_root("content-manifest");
     fs::create_dir_all(root.join("content/writing")).unwrap();

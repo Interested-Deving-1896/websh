@@ -228,7 +228,8 @@
 
 .kind[data-kind="note"],
 .kind[data-kind="key"],
-.kind[data-kind="data"] {
+.kind[data-kind="data"],
+.kind[data-kind="bundle"] {
   color: var(--ledger-dim);
 }
 
@@ -295,6 +296,21 @@
 .metaLine > span + span::before {
   content: "·";
   margin-inline: var(--gap-meta-sep);
+}
+
+.variantsLine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-1_5);
+}
+
+.variantChip {
+  border: 1px solid var(--ledger-rule);
+  color: var(--ledger-dim);
+  font-size: 10.5px;
+  line-height: 1.5;
+  padding: 0 var(--space-1_5);
 }
 
 @media (max-width: 640px) {
@@ -426,4 +442,3 @@
     display: none;
   }
 }
-

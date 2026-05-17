@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use anyhow::bail;
+
 use crate::CliResult;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -8,6 +10,7 @@ pub(in crate::workflows::attest) enum SubjectKind {
     Ledger,
     Document,
     Page,
+    Bundle,
 }
 
 impl SubjectKind {
@@ -17,7 +20,8 @@ impl SubjectKind {
             "ledger" => Ok(Self::Ledger),
             "document" => Ok(Self::Document),
             "page" => Ok(Self::Page),
-            other => Err(format!("unsupported subject kind: {other}").into()),
+            "bundle" => Ok(Self::Bundle),
+            other => bail!("unsupported subject kind: {other}"),
         }
     }
 }

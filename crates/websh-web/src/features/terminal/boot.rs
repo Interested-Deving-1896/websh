@@ -77,7 +77,7 @@ pub fn run(ctx: AppContext) {
                 }
             }
             Err(error) => {
-                services.apply_failed_root_mount_load(error.clone());
+                services.apply_failed_root_mount_load(error.to_string());
                 ctx.terminal.push_output(OutputLine::error(format!(
                     "{} Failed to mount filesystems: {}",
                     format_elapsed(elapsed()),

@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use anyhow::{anyhow, bail};
 use websh_core::attestation::artifact::{Attestation, Subject, message_sha256};
 use websh_core::crypto::pgp::{normalize_fingerprint, pretty_fingerprint};
 use websh_site::ATTESTATIONS_PATH;
@@ -34,7 +35,7 @@ pub(super) fn sign_missing_pgp_attestations(
     for route in &routes {
         let subject = artifact
             .subject_for_route(route)
-            .ok_or_else(|| format!("attestation subject not found for route {route}"))?;
+            .ok_or_else(|| anyhow!("attestation subject not found for route {route}"))?;
         subject.validate()?;
         if !subject_has_valid_pgp(root, subject)? {
             pending_routes.push(route.clone());
@@ -61,15 +62,14 @@ pub(super) fn sign_missing_pgp_attestations(
     // attestations under their own keys.
     let expected_fingerprint = pgp_fingerprint_from_key(root, key)?;
     if normalize_fingerprint(&active_fingerprint) != expected_fingerprint {
-        return Err(format!(
+        bail!(
             "attest: active gpg key fingerprint does not match the supplied public key.\n  \
              active:   {active}\n  \
              expected: {expected}\n  \
-             Refusing to sign with a non-author key. Set WEBSH_NO_SIGN=1 to build without signing.",
+            Refusing to sign with a non-author key. Set WEBSH_NO_SIGN=1 to build without signing.",
             active = pretty_fingerprint(&active_fingerprint),
             expected = pretty_fingerprint(&expected_fingerprint),
-        )
-        .into());
+        );
     }
 
     let mut signed = 0usize;

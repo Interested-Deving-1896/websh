@@ -59,6 +59,7 @@ pub fn build_mempool_manifest_state(raw_body: &str, path: &VirtualPath) -> Mempo
         meta: NodeMetadata {
             schema: SCHEMA_VERSION,
             kind: NodeKind::Page,
+            bundle: None,
             authored: Fields {
                 title: raw.title.filter(|s| !s.is_empty()),
                 date: raw.modified.filter(|s| !s.is_empty()),

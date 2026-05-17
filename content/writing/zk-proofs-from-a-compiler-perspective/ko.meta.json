@@ -2,23 +2,22 @@
   "schema": 1,
   "kind": "page",
   "authored": {
-    "title": "Zero-Knowledge Proofs, from a Compiler Perspective (Korean)",
+    "title": "컴파일러 관점에서 보는 영지식 증명",
+    "language": "ko",
     "description": "프로그램이 relation, constraint, trace, proof가 되는 과정을 컴파일러 관점에서 설명합니다.",
     "date": "2026-05-15",
     "tags": [
       "zk",
       "compilers",
-      "zero-knowledge",
-      "systems",
-      "korean"
+      "systems"
     ]
   },
   "derived": {
-    "title": "zk-proofs-from-a-compiler-perspective-ko",
+    "title": "ko",
     "kind": "page",
     "renderer": "markdown_page",
-    "size_bytes": 30276,
-    "content_sha256": "0x5fc95fa16939801143a0adcb5733c535ec986933329509ba641a684dadbda261",
-    "word_count": 3081
+    "size_bytes": 30254,
+    "content_sha256": "0x116852b7db3d7ec74be639be9a1e9c4158d16e04068504bef8d70c9b803c7758",
+    "word_count": 3080
   }
 }

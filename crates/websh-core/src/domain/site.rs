@@ -1,11 +1,11 @@
 //! Filesystem-first site metadata models.
 //!
 //! Mount declarations and the derived route index. The unified node-level
-//! metadata model lives in [`super::node_metadata`].
+//! metadata model lives in [`super::metadata`].
 
 use serde::{Deserialize, Serialize};
 
-use super::node_metadata::{NodeKind, RendererKind};
+use super::metadata::{NodeKind, RendererKind};
 
 /// Filesystem-declared mount definition loaded after bootstrap.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -17,7 +17,6 @@ pub struct MountDeclaration {
     pub root: Option<String>,
     pub gateway: Option<String>,
     pub name: Option<String>,
-    #[serde(default)]
     pub writable: bool,
 }
 
@@ -33,7 +32,6 @@ pub struct RouteIndexEntry {
 /// Derived route/search index generated from the canonical tree plus sidecars.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DerivedIndex {
-    #[serde(default)]
     pub routes: Vec<RouteIndexEntry>,
 }
 
@@ -62,8 +60,14 @@ mod tests {
     }
 
     #[test]
-    fn derived_index_defaults_empty_routes() {
-        let index: DerivedIndex = serde_json::from_str("{}").unwrap();
+    fn derived_index_parses_explicit_empty_routes() {
+        let index: DerivedIndex = serde_json::from_str(r#"{"routes":[]}"#).unwrap();
         assert!(index.routes.is_empty());
+    }
+
+    #[test]
+    fn derived_index_requires_routes_field() {
+        let parsed = serde_json::from_str::<DerivedIndex>("{}");
+        assert!(parsed.is_err());
     }
 }

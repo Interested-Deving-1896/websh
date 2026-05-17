@@ -9,8 +9,12 @@ use websh_core::ports::{
     StorageError, StorageResult, parse_manifest_snapshot, serialize_manifest_snapshot,
 };
 
-use super::graphql::{BranchRef, CommitMessage, CreateCommitInput, build_file_changes};
-use super::path::{encoded_repo_relative_path, normalize_repo_prefix, prefixed_repo_path};
+use super::graphql::{
+    BranchRef, CommitMessage, CreateCommitInput, GraphQLOperationBuildError, build_file_changes,
+};
+use super::path::{
+    RepoPathError, encoded_repo_relative_path, normalize_repo_prefix, prefixed_repo_path,
+};
 
 pub struct GitHubBackend {
     repo_with_owner: String,
@@ -21,6 +25,17 @@ pub struct GitHubBackend {
     allow_missing_manifest: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum GitHubBackendConfigError {
+    #[error("invalid repo_with_owner `{value}`")]
+    InvalidRepo { value: String },
+    #[error("invalid content prefix: {source}")]
+    InvalidContentPrefix {
+        #[from]
+        source: RepoPathError,
+    },
+}
+
 impl GitHubBackend {
     pub fn new(
         repo_with_owner: impl Into<String>,
@@ -28,7 +43,7 @@ impl GitHubBackend {
         mount_root: VirtualPath,
         content_prefix: impl Into<String>,
         gateway: impl Into<String>,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, GitHubBackendConfigError> {
         Self::new_with_manifest_policy(
             repo_with_owner,
             branch,
@@ -46,9 +61,11 @@ impl GitHubBackend {
         content_prefix: impl Into<String>,
         gateway: impl Into<String>,
         allow_missing_manifest: bool,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, GitHubBackendConfigError> {
+        let repo_with_owner = repo_with_owner.into();
+        validate_repo_with_owner(&repo_with_owner)?;
         Ok(Self {
-            repo_with_owner: repo_with_owner.into(),
+            repo_with_owner,
             branch: branch.into(),
             mount_root,
             content_prefix: normalize_repo_prefix(&content_prefix.into())?,
@@ -83,7 +100,7 @@ impl GitHubBackend {
         format!("{}/manifest.json", self.base_url())
     }
 
-    fn content_url(&self, rel_path: &str) -> Result<String, String> {
+    fn content_url(&self, rel_path: &str) -> Result<String, RepoPathError> {
         let base_url = self.base_url();
         let rel_path = encoded_repo_relative_path(rel_path.trim_start_matches('/'), true)?;
         if rel_path.is_empty() {
@@ -98,10 +115,12 @@ impl GitHubBackend {
     /// (very rare — typically only just-initialized branches), and an error
     /// for network / auth / not-found conditions.
     async fn fetch_branch_head_oid(&self, token: &str) -> StorageResult<Option<String>> {
-        let (owner, name) = self
-            .repo_with_owner
-            .split_once('/')
-            .ok_or_else(|| StorageError::BadRequest("invalid repo_with_owner".into()))?;
+        let (owner, name) =
+            self.repo_with_owner
+                .split_once('/')
+                .ok_or_else(|| StorageError::InvalidRequest {
+                    message: "invalid repo_with_owner".into(),
+                })?;
         let body = HeadQueryRequest {
             query: HEAD_QUERY,
             variables: HeadQueryVariables {
@@ -110,25 +129,29 @@ impl GitHubBackend {
                 qualified_name: format!("refs/heads/{}", self.branch),
             },
         };
-        let body_json =
-            serde_json::to_string(&body).map_err(|e| StorageError::BadRequest(e.to_string()))?;
+        let body_json = serde_json::to_string(&body).map_err(|e| StorageError::InvalidRequest {
+            message: e.to_string(),
+        })?;
         let resp = gloo_net::http::Request::post(GRAPHQL_ENDPOINT)
             .header("Authorization", &format!("bearer {}", token))
             .header("Content-Type", "application/json")
             .header("User-Agent", "websh/0.1")
             .body(body_json)
-            .map_err(|e| StorageError::BadRequest(e.to_string()))?
+            .map_err(|e| StorageError::InvalidRequest {
+                message: e.to_string(),
+            })?
             .send()
             .await
-            .map_err(|e| StorageError::NetworkError(e.to_string()))?;
+            .map_err(|e| StorageError::Network {
+                message: e.to_string(),
+            })?;
         let status = resp.status();
         if !(200..300).contains(&status) {
             return Err(map_http_status(status, retry_after_header(&resp)));
         }
-        let parsed: HeadQueryResponse = resp
-            .json()
-            .await
-            .map_err(|e| StorageError::NetworkError(e.to_string()))?;
+        let parsed: HeadQueryResponse = resp.json().await.map_err(|e| StorageError::Network {
+            message: e.to_string(),
+        })?;
         if !parsed.errors.is_empty() {
             return Err(map_graphql_error(&parsed.errors));
         }
@@ -152,7 +175,9 @@ impl GitHubBackend {
             .cache(web_sys::RequestCache::NoCache)
             .send()
             .await
-            .map_err(|e| StorageError::NetworkError(e.to_string()))?;
+            .map_err(|e| StorageError::Network {
+                message: e.to_string(),
+            })?;
         // A missing manifest is the canonical signal of a fresh / empty
         // external mount. The bootstrap root is stricter because Home's
         // root mount status needs to distinguish a failed root manifest
@@ -161,7 +186,9 @@ impl GitHubBackend {
             return if self.allow_missing_manifest {
                 Ok(ScannedSubtree::default())
             } else {
-                Err(StorageError::NotFound(self.manifest_url()))
+                Err(StorageError::NotFound {
+                    path: self.manifest_url(),
+                })
             };
         }
         if !(200..300).contains(&resp.status()) {
@@ -170,8 +197,10 @@ impl GitHubBackend {
         let body = resp
             .text()
             .await
-            .map_err(|e| StorageError::ValidationFailed(e.to_string()))?;
-        parse_manifest_snapshot(&body)
+            .map_err(|e| StorageError::RemoteRejected {
+                message: e.to_string(),
+            })?;
+        parse_manifest_snapshot(&body).map_err(Into::into)
     }
 
     async fn load_manifest_snapshot_at_head(
@@ -179,12 +208,18 @@ impl GitHubBackend {
         token: &str,
         head_oid: &str,
     ) -> StorageResult<ScannedSubtree> {
-        let (owner, name) = self
-            .repo_with_owner
-            .split_once('/')
-            .ok_or_else(|| StorageError::BadRequest("invalid repo_with_owner".into()))?;
-        let manifest_path = prefixed_repo_path(&self.content_prefix, "manifest.json")
-            .map_err(StorageError::BadRequest)?;
+        let (owner, name) =
+            self.repo_with_owner
+                .split_once('/')
+                .ok_or_else(|| StorageError::InvalidRequest {
+                    message: "invalid repo_with_owner".into(),
+                })?;
+        let manifest_path =
+            prefixed_repo_path(&self.content_prefix, "manifest.json").map_err(|source| {
+                StorageError::InvalidRequest {
+                    message: source.to_string(),
+                }
+            })?;
         let body = ManifestObjectQueryRequest {
             query: MANIFEST_OBJECT_QUERY,
             variables: ManifestObjectQueryVariables {
@@ -193,46 +228,71 @@ impl GitHubBackend {
                 manifest_expression: format!("{head_oid}:{manifest_path}"),
             },
         };
-        let body_json =
-            serde_json::to_string(&body).map_err(|e| StorageError::BadRequest(e.to_string()))?;
+        let body_json = serde_json::to_string(&body).map_err(|e| StorageError::InvalidRequest {
+            message: e.to_string(),
+        })?;
         let resp = gloo_net::http::Request::post(GRAPHQL_ENDPOINT)
             .header("Authorization", &format!("bearer {}", token))
             .header("Content-Type", "application/json")
             .header("User-Agent", "websh/0.1")
             .body(body_json)
-            .map_err(|e| StorageError::BadRequest(e.to_string()))?
+            .map_err(|e| StorageError::InvalidRequest {
+                message: e.to_string(),
+            })?
             .send()
             .await
-            .map_err(|e| StorageError::NetworkError(e.to_string()))?;
+            .map_err(|e| StorageError::Network {
+                message: e.to_string(),
+            })?;
         let status = resp.status();
         if !(200..300).contains(&status) {
             return Err(map_http_status(status, retry_after_header(&resp)));
         }
-        let parsed: ManifestObjectQueryResponse = resp
-            .json()
-            .await
-            .map_err(|e| StorageError::NetworkError(e.to_string()))?;
+        let parsed: ManifestObjectQueryResponse =
+            resp.json().await.map_err(|e| StorageError::Network {
+                message: e.to_string(),
+            })?;
         if !parsed.errors.is_empty() {
             return Err(map_graphql_error(&parsed.errors));
         }
 
         let Some(repository) = parsed.data.and_then(|data| data.repository) else {
-            return Err(StorageError::NotFound(self.repo_with_owner.clone()));
+            return Err(StorageError::NotFound {
+                path: self.repo_with_owner.clone(),
+            });
         };
         let Some(object) = repository.object else {
             return if self.allow_missing_manifest {
                 Ok(ScannedSubtree::default())
             } else {
-                Err(StorageError::NotFound(manifest_path))
+                Err(StorageError::NotFound {
+                    path: manifest_path,
+                })
             };
         };
         match object {
-            ManifestObject::Blob { text } => parse_manifest_snapshot(&text.unwrap_or_default()),
-            ManifestObject::Other => Err(StorageError::ValidationFailed(
-                "manifest object is not a Blob".to_string(),
-            )),
+            ManifestObject::Blob { text } => {
+                parse_manifest_snapshot(&text.unwrap_or_default()).map_err(Into::into)
+            }
+            ManifestObject::Other => Err(StorageError::RemoteRejected {
+                message: "manifest object is not a Blob".to_string(),
+            }),
         }
     }
+}
+
+fn validate_repo_with_owner(value: &str) -> Result<(), GitHubBackendConfigError> {
+    let Some((owner, name)) = value.split_once('/') else {
+        return Err(GitHubBackendConfigError::InvalidRepo {
+            value: value.to_string(),
+        });
+    };
+    if owner.is_empty() || name.is_empty() || name.contains('/') {
+        return Err(GitHubBackendConfigError::InvalidRepo {
+            value: value.to_string(),
+        });
+    }
+    Ok(())
 }
 
 #[derive(Serialize)]
@@ -249,6 +309,7 @@ struct GraphQLVariables<'a> {
 #[derive(Deserialize)]
 struct GraphQLResponse {
     data: Option<GraphQLData>,
+    // GitHub omits `errors` on successful GraphQL responses.
     #[serde(default)]
     errors: Vec<GraphQLErrorItem>,
 }
@@ -320,6 +381,7 @@ struct HeadQueryRequest<'a> {
 #[derive(Deserialize)]
 struct HeadQueryResponse {
     data: Option<HeadQueryData>,
+    // GitHub omits `errors` on successful GraphQL responses.
     #[serde(default)]
     errors: Vec<GraphQLErrorItem>,
 }
@@ -341,6 +403,7 @@ struct ManifestObjectQueryRequest<'a> {
 #[derive(Deserialize)]
 struct ManifestObjectQueryResponse {
     data: Option<ManifestObjectQueryData>,
+    // GitHub omits `errors` on successful GraphQL responses.
     #[serde(default)]
     errors: Vec<GraphQLErrorItem>,
 }
@@ -393,35 +456,39 @@ fn map_graphql_error(errors: &[GraphQLErrorItem]) -> StorageError {
         let msg = e.message.to_lowercase();
         if msg.contains("expected") && msg.contains("head") {
             return StorageError::Conflict {
-                remote_head: extract_sha(&e.message).unwrap_or_default(),
+                remote_head: extract_sha(&e.message),
             };
         }
         if msg.contains("not authorized") || msg.contains("must have push access") {
             return StorageError::AuthFailed;
         }
         if msg.contains("could not resolve") || msg.contains("not found") {
-            return StorageError::NotFound(e.message.clone());
+            return StorageError::NotFound {
+                path: e.message.clone(),
+            };
         }
     }
-    StorageError::ValidationFailed(
-        errors
+    StorageError::RemoteRejected {
+        message: errors
             .first()
             .map(|e| e.message.clone())
             .unwrap_or_else(|| "unknown error".into()),
-    )
+    }
 }
 
 fn map_http_status(status: u16, retry_after: Option<u64>) -> StorageError {
     match status {
         401 | 403 => StorageError::AuthFailed,
-        404 => StorageError::NotFound(String::new()),
-        409 => StorageError::Conflict {
-            remote_head: String::new(),
+        404 => StorageError::NotFound {
+            path: String::new(),
         },
-        422 => StorageError::ValidationFailed(String::new()),
+        409 => StorageError::Conflict { remote_head: None },
+        422 => StorageError::RemoteRejected {
+            message: String::new(),
+        },
         429 => StorageError::RateLimited { retry_after },
-        500..=599 => StorageError::ServerError(status),
-        _ => StorageError::ServerError(status),
+        500..=599 => StorageError::Server { status },
+        _ => StorageError::Server { status },
     }
 }
 
@@ -448,7 +515,7 @@ impl StorageBackend for GitHubBackend {
         auth_token: Option<String>,
     ) -> LocalBoxFuture<'_, StorageResult<CommitBase>> {
         Box::pin(async move {
-            let token = auth_token.as_deref().ok_or(StorageError::NoToken)?;
+            let token = auth_token.as_deref().ok_or(StorageError::MissingToken)?;
             let expected_head = match expected_head {
                 Some(head) => Some(head),
                 None => self.fetch_branch_head_oid(token).await?,
@@ -470,44 +537,56 @@ impl StorageBackend for GitHubBackend {
 
     fn read_text<'a>(&'a self, rel_path: &'a str) -> LocalBoxFuture<'a, StorageResult<String>> {
         Box::pin(async move {
-            let url = self
-                .content_url(rel_path)
-                .map_err(StorageError::BadRequest)?;
+            let url =
+                self.content_url(rel_path)
+                    .map_err(|source| StorageError::InvalidRequest {
+                        message: source.to_string(),
+                    })?;
             let resp = gloo_net::http::Request::get(&url)
                 .send()
                 .await
-                .map_err(|e| StorageError::NetworkError(e.to_string()))?;
+                .map_err(|e| StorageError::Network {
+                    message: e.to_string(),
+                })?;
             if !(200..300).contains(&resp.status()) {
                 return Err(map_http_status(resp.status(), None));
             }
-            resp.text()
-                .await
-                .map_err(|e| StorageError::ValidationFailed(e.to_string()))
+            resp.text().await.map_err(|e| StorageError::RemoteRejected {
+                message: e.to_string(),
+            })
         })
     }
 
     fn read_bytes<'a>(&'a self, rel_path: &'a str) -> LocalBoxFuture<'a, StorageResult<Vec<u8>>> {
         Box::pin(async move {
-            let url = self
-                .content_url(rel_path)
-                .map_err(StorageError::BadRequest)?;
+            let url =
+                self.content_url(rel_path)
+                    .map_err(|source| StorageError::InvalidRequest {
+                        message: source.to_string(),
+                    })?;
             let resp = gloo_net::http::Request::get(&url)
                 .send()
                 .await
-                .map_err(|e| StorageError::NetworkError(e.to_string()))?;
+                .map_err(|e| StorageError::Network {
+                    message: e.to_string(),
+                })?;
             if !(200..300).contains(&resp.status()) {
                 return Err(map_http_status(resp.status(), None));
             }
             resp.binary()
                 .await
-                .map_err(|e| StorageError::ValidationFailed(e.to_string()))
+                .map_err(|e| StorageError::RemoteRejected {
+                    message: e.to_string(),
+                })
         })
     }
 
     fn public_read_url(&self, rel_path: &str) -> StorageResult<Option<String>> {
         self.content_url(rel_path)
             .map(Some)
-            .map_err(StorageError::BadRequest)
+            .map_err(|source| StorageError::InvalidRequest {
+                message: source.to_string(),
+            })
     }
 
     fn commit<'a>(
@@ -515,17 +594,26 @@ impl StorageBackend for GitHubBackend {
         request: &'a CommitRequest,
     ) -> LocalBoxFuture<'a, StorageResult<CommitOutcome>> {
         Box::pin(async move {
-            let token = request.auth_token.as_deref().ok_or(StorageError::NoToken)?;
+            let token = request
+                .auth_token
+                .as_deref()
+                .ok_or(StorageError::MissingToken)?;
             let manifest_body = serialize_manifest_snapshot(&request.merged_snapshot)?;
             let manifest_repo_path = prefixed_repo_path(&self.content_prefix, "manifest.json")
-                .map_err(StorageError::BadRequest)?;
+                .map_err(|source| StorageError::InvalidRequest {
+                    message: source.to_string(),
+                })?;
             let file_changes = build_file_changes(
                 &request.delta,
                 &self.mount_root,
                 &self.content_prefix,
                 Some((manifest_repo_path.as_str(), &manifest_body)),
             )
-            .map_err(StorageError::BadRequest)?;
+            .map_err(|source: GraphQLOperationBuildError| {
+                StorageError::InvalidRequest {
+                    message: source.to_string(),
+                }
+            })?;
 
             // GitHub's `createCommitOnBranch` mutation requires
             // `expectedHeadOid`. On the first UI-driven commit to a mount
@@ -554,28 +642,33 @@ impl StorageBackend for GitHubBackend {
                 query: MUTATION,
                 variables: GraphQLVariables { input: &input },
             };
-            let body_json = serde_json::to_string(&body)
-                .map_err(|e| StorageError::BadRequest(e.to_string()))?;
+            let body_json =
+                serde_json::to_string(&body).map_err(|e| StorageError::InvalidRequest {
+                    message: e.to_string(),
+                })?;
 
             let resp = gloo_net::http::Request::post(GRAPHQL_ENDPOINT)
                 .header("Authorization", &format!("bearer {}", token))
                 .header("Content-Type", "application/json")
                 .header("User-Agent", "websh/0.1")
                 .body(body_json)
-                .map_err(|e| StorageError::BadRequest(e.to_string()))?
+                .map_err(|e| StorageError::InvalidRequest {
+                    message: e.to_string(),
+                })?
                 .send()
                 .await
-                .map_err(|e| StorageError::NetworkError(e.to_string()))?;
+                .map_err(|e| StorageError::Network {
+                    message: e.to_string(),
+                })?;
 
             let status = resp.status();
             if !(200..300).contains(&status) {
                 return Err(map_http_status(status, retry_after_header(&resp)));
             }
 
-            let gql: GraphQLResponse = resp
-                .json()
-                .await
-                .map_err(|e| StorageError::NetworkError(e.to_string()))?;
+            let gql: GraphQLResponse = resp.json().await.map_err(|e| StorageError::Network {
+                message: e.to_string(),
+            })?;
 
             if !gql.errors.is_empty() {
                 return Err(map_graphql_error(&gql.errors));
@@ -585,7 +678,9 @@ impl StorageBackend for GitHubBackend {
                 .data
                 .and_then(|d| d.create_commit_on_branch)
                 .map(|c| c.commit.oid)
-                .ok_or_else(|| StorageError::ValidationFailed("empty data".into()))?;
+                .ok_or_else(|| StorageError::RemoteRejected {
+                    message: "empty data".into(),
+                })?;
 
             Ok(CommitOutcome {
                 new_head,
@@ -727,7 +822,12 @@ mod tests {
             Ok(_) => panic!("constructor should reject traversal content prefix"),
             Err(err) => err,
         };
-        assert!(err.contains("traversal"));
+        assert!(matches!(
+            err,
+            GitHubBackendConfigError::InvalidContentPrefix {
+                source: RepoPathError::Traversal { path },
+            } if path == "content/../other"
+        ));
     }
 
     #[wasm_bindgen_test]
@@ -750,6 +850,6 @@ mod tests {
         };
 
         let err = backend.commit(&request).await.unwrap_err();
-        assert_eq!(err, StorageError::NoToken);
+        assert_eq!(err, StorageError::MissingToken);
     }
 }

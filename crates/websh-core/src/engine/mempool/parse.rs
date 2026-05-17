@@ -81,12 +81,17 @@ pub fn strip_frontmatter_block(body: &str) -> &str {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum MempoolFrontmatterError {
+    #[error("promote: source body has no recognizable frontmatter")]
+    MissingFrontmatter,
+}
+
 /// Mempool frontmatter → canonical `Fields`-shaped frontmatter.
 /// Drops `status` / `priority` (mempool-only), renames `modified` → `date`.
 /// Required because the canonical YAML parser rejects mempool-only keys.
-pub fn transform_mempool_frontmatter(body: &str) -> Result<String, String> {
-    let raw = parse_mempool_frontmatter(body)
-        .ok_or_else(|| "promote: source body has no recognizable frontmatter".to_string())?;
+pub fn transform_mempool_frontmatter(body: &str) -> Result<String, MempoolFrontmatterError> {
+    let raw = parse_mempool_frontmatter(body).ok_or(MempoolFrontmatterError::MissingFrontmatter)?;
     let body_after = strip_frontmatter_block(body);
 
     let mut out = String::from("---\n");

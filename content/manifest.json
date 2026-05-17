@@ -61,7 +61,7 @@
         "derived": {
           "title": "papers",
           "kind": "directory",
-          "child_count": 1
+          "child_count": 0
         }
       }
     },
@@ -74,7 +74,7 @@
         "derived": {
           "title": "projects",
           "kind": "directory",
-          "child_count": 1
+          "child_count": 0
         }
       }
     },
@@ -105,6 +105,96 @@
       }
     },
     {
+      "path": "writing/zk-proofs-from-a-compiler-perspective",
+      "metadata": {
+        "schema": 1,
+        "kind": "bundle",
+        "bundle": {
+          "default_variant": "en",
+          "variants": [
+            {
+              "id": "en",
+              "path": "en.md",
+              "label": "English",
+              "locale": "en"
+            },
+            {
+              "id": "ko",
+              "path": "ko.md",
+              "label": "한국어",
+              "locale": "ko"
+            }
+          ]
+        },
+        "authored": {
+          "title": "Zero-Knowledge Proofs, from a Compiler Perspective",
+          "description": "How programs become relations, constraints, traces, and proofs.",
+          "date": "2026-05-15",
+          "tags": [
+            "zk",
+            "compilers",
+            "systems"
+          ]
+        },
+        "derived": {
+          "title": "zk-proofs-from-a-compiler-perspective",
+          "kind": "bundle",
+          "child_count": 2
+        }
+      }
+    },
+    {
+      "path": "writing/zksummit14-review",
+      "metadata": {
+        "schema": 1,
+        "kind": "bundle",
+        "bundle": {
+          "default_variant": "en",
+          "variants": [
+            {
+              "id": "en",
+              "path": "en.md",
+              "label": "English",
+              "locale": "en"
+            },
+            {
+              "id": "ko",
+              "path": "ko.md",
+              "label": "한국어",
+              "locale": "ko"
+            }
+          ]
+        },
+        "authored": {
+          "title": "ZK Summit 14 Review: Talks, Themes, and Takeaways",
+          "description": "A program-level review of ZK Summit 14, covering talks, themes, and takeaways.",
+          "date": "2026-05-18",
+          "tags": [
+            "zk",
+            "zksummit",
+            "event"
+          ],
+          "links": [
+            {
+              "label": "event page",
+              "url": "https://www.zksummit.com/",
+              "kind": "event"
+            },
+            {
+              "label": "Ethereum Collective Korea",
+              "url": "https://t.me/thetickeriseth/1403",
+              "kind": "telegram"
+            }
+          ]
+        },
+        "derived": {
+          "title": "zksummit14-review",
+          "kind": "bundle",
+          "child_count": 2
+        }
+      }
+    },
+    {
       "path": ".websh/ledger.json",
       "metadata": {
         "schema": 1,
@@ -113,7 +203,7 @@
         "derived": {
           "title": "ledger",
           "kind": "data",
-          "size_bytes": 7975
+          "size_bytes": 7161
         }
       }
     },
@@ -165,57 +255,6 @@
       }
     },
     {
-      "path": "papers/tabula.md",
-      "metadata": {
-        "schema": 1,
-        "kind": "page",
-        "authored": {
-          "title": "tabula",
-          "description": "A new zkVM for typed, tabular state transitions.",
-          "date": "2026-04-26",
-          "tags": [
-            "systems",
-            "zk",
-            "paper"
-          ]
-        },
-        "derived": {
-          "title": "tabula",
-          "kind": "page",
-          "renderer": "markdown_page",
-          "size_bytes": 178,
-          "content_sha256": "0xdbed15a29be2dff62cf89c08ee1992b6377650eafe76a9a8f74d2e59f659a9a5",
-          "word_count": 8
-        }
-      }
-    },
-    {
-      "path": "projects/websh.md",
-      "metadata": {
-        "schema": 1,
-        "kind": "page",
-        "authored": {
-          "title": "websh",
-          "description": "Browser-native filesystem shell. Rust + Wasm, runs entirely client-side.",
-          "date": "2026-04-22",
-          "tags": [
-            "local app",
-            "rust",
-            "wasm",
-            "filesystem"
-          ]
-        },
-        "derived": {
-          "title": "websh",
-          "kind": "page",
-          "renderer": "markdown_page",
-          "size_bytes": 236,
-          "content_sha256": "0x6d529f7b2dbd6de0b11870c04aebabfc213fa0c3f3bab3a26256e87d78a471a6",
-          "word_count": 9
-        }
-      }
-    },
-    {
       "path": "talks/evaluating-compiler-optimization-impacts-on-zkvm-performance.pdf",
       "metadata": {
         "schema": 1,
@@ -229,6 +268,13 @@
             "zk",
             "zkvm",
             "compilers"
+          ],
+          "links": [
+            {
+              "label": "arXiv",
+              "url": "https://arxiv.org/abs/2508.17518",
+              "kind": "paper"
+            }
           ]
         },
         "derived": {
@@ -247,55 +293,106 @@
       }
     },
     {
-      "path": "writing/zk-proofs-from-a-compiler-perspective-ko.md",
-      "metadata": {
-        "schema": 1,
-        "kind": "page",
-        "authored": {
-          "title": "Zero-Knowledge Proofs, from a Compiler Perspective (Korean)",
-          "description": "프로그램이 relation, constraint, trace, proof가 되는 과정을 컴파일러 관점에서 설명합니다.",
-          "date": "2026-05-15",
-          "tags": [
-            "zk",
-            "compilers",
-            "zero-knowledge",
-            "systems",
-            "korean"
-          ]
-        },
-        "derived": {
-          "title": "zk-proofs-from-a-compiler-perspective-ko",
-          "kind": "page",
-          "renderer": "markdown_page",
-          "size_bytes": 30276,
-          "content_sha256": "0x5fc95fa16939801143a0adcb5733c535ec986933329509ba641a684dadbda261",
-          "word_count": 3081
-        }
-      }
-    },
-    {
-      "path": "writing/zk-proofs-from-a-compiler-perspective.md",
+      "path": "writing/zk-proofs-from-a-compiler-perspective/en.md",
       "metadata": {
         "schema": 1,
         "kind": "page",
         "authored": {
           "title": "Zero-Knowledge Proofs, from a Compiler Perspective",
+          "language": "en",
           "description": "How programs become relations, constraints, traces, and proofs.",
           "date": "2026-05-15",
           "tags": [
             "zk",
             "compilers",
-            "zero-knowledge",
             "systems"
           ]
         },
         "derived": {
-          "title": "zk-proofs-from-a-compiler-perspective",
+          "title": "en",
           "kind": "page",
           "renderer": "markdown_page",
-          "size_bytes": 25380,
-          "content_sha256": "0x19146d7604d9eb3ef8f2bcce7e40ea2b6bc7c8bde4532ebf1e825d46c8038f2d",
+          "size_bytes": 25377,
+          "content_sha256": "0xabdfb58f0df265ac3ac0c3b5be14e6c07d722e010dd3cfeea27fe151c4923c13",
           "word_count": 3951
+        }
+      }
+    },
+    {
+      "path": "writing/zk-proofs-from-a-compiler-perspective/ko.md",
+      "metadata": {
+        "schema": 1,
+        "kind": "page",
+        "authored": {
+          "title": "컴파일러 관점에서 보는 영지식 증명",
+          "language": "ko",
+          "description": "프로그램이 relation, constraint, trace, proof가 되는 과정을 컴파일러 관점에서 설명합니다.",
+          "date": "2026-05-15",
+          "tags": [
+            "zk",
+            "compilers",
+            "systems"
+          ]
+        },
+        "derived": {
+          "title": "ko",
+          "kind": "page",
+          "renderer": "markdown_page",
+          "size_bytes": 30254,
+          "content_sha256": "0x116852b7db3d7ec74be639be9a1e9c4158d16e04068504bef8d70c9b803c7758",
+          "word_count": 3080
+        }
+      }
+    },
+    {
+      "path": "writing/zksummit14-review/en.md",
+      "metadata": {
+        "schema": 1,
+        "kind": "page",
+        "authored": {
+          "title": "ZK Summit 14 Review: Talks, Themes, and Takeaways",
+          "language": "en",
+          "description": "A program-level review of ZK Summit 14, covering talks, themes, and takeaways.",
+          "date": "2026-05-18",
+          "tags": [
+            "zk",
+            "zksummit",
+            "event"
+          ]
+        },
+        "derived": {
+          "title": "en",
+          "kind": "page",
+          "renderer": "markdown_page",
+          "size_bytes": 22283,
+          "content_sha256": "0x4b9f2f0a0c0fb357fec9ed3efeba0525bf69c0f3bfc8cc06691ea710288cd5f6",
+          "word_count": 3075
+        }
+      }
+    },
+    {
+      "path": "writing/zksummit14-review/ko.md",
+      "metadata": {
+        "schema": 1,
+        "kind": "page",
+        "authored": {
+          "title": "ZK Summit 14 리뷰: 발표, 주제, 시사점",
+          "language": "ko",
+          "description": "ZK Summit 14의 발표, 주요 주제, 시사점을 정리합니다.",
+          "date": "2026-05-18",
+          "tags": [
+            "zk",
+            "zksummit",
+            "event"
+          ]
+        },
+        "derived": {
+          "title": "ko",
+          "kind": "page",
+          "renderer": "markdown_page",
+          "size_bytes": 24737,
+          "content_sha256": "0x7ed090d54a533d743a7b20fe4671184c1f9eba595581ec7574ef4f275abefc5d",
+          "word_count": 2528
         }
       }
     }

@@ -2,13 +2,13 @@ use std::collections::HashMap;
 use std::fmt;
 
 use super::mempool::MempoolFields;
-use super::node_metadata::{NodeKind, NodeMetadata};
+use super::metadata::{NodeKind, NodeMetadata};
 
 /// Domain-extension sibling blocks on a file entry — one optional
 /// typed field per domain, populated from the manifest entry.
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EntryExtensions {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mempool: Option<MempoolFields>,
 }
 
@@ -92,6 +92,7 @@ impl FsEntry {
             content_path: None,
             meta: NodeMetadata {
                 kind: NodeKind::Asset,
+                bundle: None,
                 ..NodeMetadata::default()
             },
             extensions: EntryExtensions::default(),

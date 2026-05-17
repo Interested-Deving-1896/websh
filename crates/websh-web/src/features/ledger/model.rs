@@ -1,12 +1,13 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use crate::app::AppContext;
 use crate::shared::components::size_summary_parts;
 use websh_core::attestation::ledger::{
-    CONTENT_LEDGER_CONTENT_PATH, ContentLedger, ContentLedgerBlock,
+    CONTENT_LEDGER_CONTENT_PATH, ContentLedger, ContentLedgerBlock, LedgerValidationError,
 };
 use websh_core::domain::{NodeMetadata, VirtualPath};
-use websh_core::filesystem::{GlobalFs, content_href_for_path};
+use websh_core::filesystem::{ContentReadError, GlobalFs, content_href_for_path};
 use websh_core::mempool::LEDGER_CATEGORIES;
 use websh_core::support::format::{format_date_iso, format_size, iso_date_prefix};
 
@@ -28,6 +29,28 @@ pub(super) enum LedgerFilter {
     Category(String),
 }
 
+#[derive(Clone, Debug, thiserror::Error)]
+pub(super) enum LedgerLoadError {
+    #[error("root mount failed: {message}")]
+    RootMountFailed { message: String },
+    #[error("read {path}: {source}")]
+    Read {
+        path: VirtualPath,
+        #[source]
+        source: ContentReadError,
+    },
+    #[error("parse ledger json: {source}")]
+    Parse {
+        #[source]
+        source: Arc<serde_json::Error>,
+    },
+    #[error("validate ledger: {source}")]
+    Validate {
+        #[source]
+        source: Arc<LedgerValidationError>,
+    },
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct LedgerEntry {
     pub(super) block_number: String,
@@ -40,6 +63,7 @@ pub(super) struct LedgerEntry {
     pub(super) category: String,
     pub(super) kind: String,
     pub(super) meta_line: Vec<String>,
+    pub(super) variants: Vec<String>,
     pub(super) encrypted: bool,
     pub(super) hash: String,
     pub(super) previous_hash: String,
@@ -56,15 +80,22 @@ pub(super) fn ledger_filter_for_route(request_path: &str, node_path: &VirtualPat
         .unwrap_or(LedgerFilter::All)
 }
 
-pub(super) async fn load_content_ledger(ctx: AppContext) -> Result<ContentLedger, String> {
+pub(super) async fn load_content_ledger(ctx: AppContext) -> Result<ContentLedger, LedgerLoadError> {
     let path = VirtualPath::from_absolute(format!("/{CONTENT_LEDGER_CONTENT_PATH}"))
         .expect("ledger path is absolute");
     let body = ctx
         .read_text(&path)
         .await
-        .map_err(|error| error.to_string())?;
-    let ledger: ContentLedger = serde_json::from_str(&body).map_err(|error| error.to_string())?;
-    ledger.validate()?;
+        .map_err(|source| LedgerLoadError::Read { path, source })?;
+    let ledger: ContentLedger =
+        serde_json::from_str(&body).map_err(|source| LedgerLoadError::Parse {
+            source: Arc::new(source),
+        })?;
+    ledger
+        .validate()
+        .map_err(|source| LedgerLoadError::Validate {
+            source: Arc::new(source),
+        })?;
     Ok(ledger)
 }
 
@@ -137,7 +168,11 @@ fn ledger_entry_for_block(fs: &GlobalFs, block: &ContentLedgerBlock) -> Option<L
         .or_else(|| node_meta.and_then(|meta| meta.modified_at().map(format_date_iso)))
         .unwrap_or_else(|| "undated".to_string());
     let category = entry.category.as_str().to_string();
-    let kind = kind_for_entry(&category, &entry.path);
+    let kind = if node_meta.is_some_and(NodeMetadata::is_bundle) {
+        "bundle".to_string()
+    } else {
+        kind_for_entry(&category, &entry.path)
+    };
     let tags = node_meta.map(NodeMetadata::tags_owned).unwrap_or_default();
     let size = node_meta
         .and_then(|meta| meta.size_bytes())
@@ -153,6 +188,16 @@ fn ledger_entry_for_block(fs: &GlobalFs, block: &ContentLedgerBlock) -> Option<L
         })
         .unwrap_or_default();
     let encrypted = node_meta.and_then(|meta| meta.access()).is_some();
+    let variants = node_meta
+        .and_then(|meta| meta.bundle.as_ref())
+        .map(|bundle| {
+            bundle
+                .variants
+                .iter()
+                .map(|variant| variant.label.clone())
+                .collect()
+        })
+        .unwrap_or_default();
 
     Some(LedgerEntry {
         block_number: format!("{:04}", block.height),
@@ -165,6 +210,7 @@ fn ledger_entry_for_block(fs: &GlobalFs, block: &ContentLedgerBlock) -> Option<L
         category,
         kind,
         meta_line: meta_line_for_entry(summary_parts, size, &tags),
+        variants,
         encrypted,
         hash: block.block_sha256.clone(),
         previous_hash: block.prev_block_sha256.clone(),

@@ -17,7 +17,7 @@
   border-bottom: 1px solid var(--archive-rule);
   color: var(--archive-dim);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
   align-items: center;
   column-gap: var(--space-3_5);
   font-family: var(--font-mono);
@@ -88,11 +88,15 @@
 .breadcrumb {
   grid-column: 2;
   justify-self: center;
-  display: inline-flex;
+  position: relative;
+  display: flex;
   align-items: baseline;
+  justify-content: center;
   gap: var(--space-1_5);
+  width: 100%;
   min-width: 0;
-  max-width: 52vw;
+  max-width: 100%;
+  overflow: hidden;
   color: var(--archive-dim);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -100,9 +104,12 @@
 
 .crumb,
 .crumbCurrent {
+  display: block;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .crumb:hover {
@@ -501,7 +508,7 @@
   /*
     Mobile compaction (Option A) — two rows, three columns:
       Row 1: lead (identity + walletButton) | _ | palette
-      Row 2: nav                            | _ | breadcrumb
+      Row 2: nav                            | breadcrumb
 
     `.actions` becomes `display: contents` so its children (.nav, .divider,
     .themePicker) participate in the chrome grid directly. Spacing tokens
@@ -542,10 +549,11 @@
   }
 
   .breadcrumb {
-    grid-column: 3;
+    grid-column: 2 / 4;
     grid-row: 2;
     justify-self: end;
-    max-width: 100%;
+    justify-content: flex-end;
+    width: 100%;
   }
 
   .chipKey {

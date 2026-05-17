@@ -2,11 +2,11 @@ use crate::engine::attestation::artifact::{CONTENT_HASH, sha256_hex};
 
 use super::{
     CONTENT_LEDGER_GENESIS_HASH, CONTENT_LEDGER_SCHEME, ContentLedger, ContentLedgerBlock,
-    ContentLedgerBlockForHash, ContentLedgerInput,
+    ContentLedgerBlockForHash, ContentLedgerInput, LedgerHashError,
 };
 
 impl ContentLedger {
-    pub fn new(mut inputs: Vec<ContentLedgerInput>) -> Result<Self, serde_json::Error> {
+    pub fn new(mut inputs: Vec<ContentLedgerInput>) -> Result<Self, LedgerHashError> {
         inputs.sort_by(|left, right| left.sort_key.cmp(&right.sort_key));
 
         let genesis_hash = CONTENT_LEDGER_GENESIS_HASH.to_string();
@@ -44,7 +44,7 @@ impl ContentLedger {
     }
 }
 
-pub fn compute_block_sha256(block: &ContentLedgerBlock) -> Result<String, serde_json::Error> {
+pub fn compute_block_sha256(block: &ContentLedgerBlock) -> Result<String, LedgerHashError> {
     serde_json::to_vec(&ContentLedgerBlockForHash {
         height: block.height,
         sort_key: &block.sort_key,
@@ -52,4 +52,5 @@ pub fn compute_block_sha256(block: &ContentLedgerBlock) -> Result<String, serde_
         entry: &block.entry,
     })
     .map(|bytes| sha256_hex(&bytes))
+    .map_err(|source| LedgerHashError::Block { source })
 }

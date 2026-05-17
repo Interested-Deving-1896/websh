@@ -13,12 +13,13 @@
 use leptos::prelude::*;
 
 use crate::shared::components::{IdentifierStrip, MetaRow, MetaTable};
-use websh_core::domain::NodeKind;
+use websh_core::domain::{FileType, LinkRef, NodeKind};
 use websh_core::support::format::format_date_compact;
 
+use super::actions::{ReaderActionsBindings, ReaderActionsMenu};
 use super::css;
 use super::intent::ReaderIntent;
-use super::meta::ReaderMeta;
+use super::meta::{ReaderMeta, ReaderVariantLink, type_tag_for_intent};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RowSpec {
@@ -35,6 +36,12 @@ pub enum RowSpec {
     Tags {
         items: Vec<String>,
     },
+    Links {
+        items: Vec<LinkRef>,
+    },
+    Variants {
+        items: Vec<ReaderVariantLink>,
+    },
     Caption {
         text: String,
     },
@@ -43,13 +50,7 @@ pub enum RowSpec {
 pub fn rows_for(intent: &ReaderIntent, meta: &ReaderMeta) -> Vec<RowSpec> {
     let mut rows = Vec::new();
 
-    let type_tag = match intent {
-        ReaderIntent::Markdown { .. } => Some("markdown".to_string()),
-        ReaderIntent::Html { .. } => Some("html".to_string()),
-        ReaderIntent::Plain { .. } => Some("text".to_string()),
-        ReaderIntent::Asset { media_type, .. } => Some(media_type.clone()),
-        ReaderIntent::Redirect { .. } => None,
-    };
+    let type_tag = type_tag_for_intent(intent);
 
     if let Some(tag) = type_tag {
         rows.push(RowSpec::Type {
@@ -58,10 +59,14 @@ pub fn rows_for(intent: &ReaderIntent, meta: &ReaderMeta) -> Vec<RowSpec> {
         });
     }
 
-    let wants_size = !matches!(
-        intent,
-        ReaderIntent::Markdown { .. } | ReaderIntent::Html { .. } | ReaderIntent::Redirect { .. }
-    );
+    if meta.variants.len() > 1 {
+        rows.push(RowSpec::Variants {
+            items: meta.variants.clone(),
+        });
+    }
+
+    let wants_size =
+        !intent_is_markdown(intent) && !intent_is_html(intent) && !intent_is_redirect(intent);
     if wants_size && let Some(size) = meta.size_pretty.clone() {
         rows.push(RowSpec::Size { value: size });
     }
@@ -72,15 +77,20 @@ pub fn rows_for(intent: &ReaderIntent, meta: &ReaderMeta) -> Vec<RowSpec> {
         rows.push(RowSpec::Date { value: date });
     }
 
-    let wants_tags = matches!(intent, ReaderIntent::Markdown { .. })
-        || matches!(intent, ReaderIntent::Asset { media_type, .. } if media_type == "application/pdf");
+    let wants_tags = intent_is_markdown(intent) || intent_is_pdf(intent);
     if wants_tags && !meta.tags.is_empty() {
         rows.push(RowSpec::Tags {
             items: meta.tags.clone(),
         });
     }
 
-    let wants_caption = matches!(intent, ReaderIntent::Asset { media_type, .. } if media_type.starts_with("image/"));
+    if !meta.links.is_empty() {
+        rows.push(RowSpec::Links {
+            items: meta.links.clone(),
+        });
+    }
+
+    let wants_caption = intent_is_image(intent);
     if wants_caption && !meta.description.is_empty() {
         rows.push(RowSpec::Caption {
             text: meta.description.clone(),
@@ -88,6 +98,51 @@ pub fn rows_for(intent: &ReaderIntent, meta: &ReaderMeta) -> Vec<RowSpec> {
     }
 
     rows
+}
+
+fn intent_is_markdown(intent: &ReaderIntent) -> bool {
+    matches!(intent, ReaderIntent::Markdown { .. })
+        || matches!(
+            intent,
+            ReaderIntent::BundleVariant { variant_path, .. }
+                if FileType::from_path(variant_path.as_str()) == FileType::Markdown
+        )
+}
+
+fn intent_is_html(intent: &ReaderIntent) -> bool {
+    matches!(intent, ReaderIntent::Html { .. })
+        || matches!(
+            intent,
+            ReaderIntent::BundleVariant { variant_path, .. }
+                if FileType::from_path(variant_path.as_str()) == FileType::Html
+        )
+}
+
+fn intent_is_redirect(intent: &ReaderIntent) -> bool {
+    matches!(intent, ReaderIntent::Redirect { .. })
+        || matches!(
+            intent,
+            ReaderIntent::BundleVariant { variant_path, .. }
+                if FileType::from_path(variant_path.as_str()) == FileType::Link
+        )
+}
+
+fn intent_is_pdf(intent: &ReaderIntent) -> bool {
+    matches!(intent, ReaderIntent::Asset { media_type, .. } if media_type == "application/pdf")
+        || matches!(
+            intent,
+            ReaderIntent::BundleVariant { variant_path, .. }
+                if FileType::from_path(variant_path.as_str()) == FileType::Pdf
+        )
+}
+
+fn intent_is_image(intent: &ReaderIntent) -> bool {
+    matches!(intent, ReaderIntent::Asset { media_type, .. } if media_type.starts_with("image/"))
+        || matches!(
+            intent,
+            ReaderIntent::BundleVariant { variant_path, .. }
+                if FileType::from_path(variant_path.as_str()) == FileType::Image
+        )
 }
 
 /// Friendly display label for a [`NodeKind`]. Shorter than the enum
@@ -102,6 +157,7 @@ fn kind_label(kind: NodeKind) -> &'static str {
         NodeKind::Redirect => "Link",
         NodeKind::Data => "Data",
         NodeKind::Directory => "Folder",
+        NodeKind::Bundle => "Bundle",
     }
 }
 
@@ -143,20 +199,32 @@ pub fn Ident(meta: Memo<ReaderMeta>) -> impl IntoView {
 }
 
 #[component]
-pub fn TitleBlock(intent: Memo<ReaderIntent>, meta: Memo<ReaderMeta>) -> impl IntoView {
+pub fn TitleBlock(
+    intent: Memo<ReaderIntent>,
+    meta: Memo<ReaderMeta>,
+    actions: ReaderActionsBindings,
+    variants_disabled: Signal<bool>,
+    set_preferred_locale: Callback<String>,
+) -> impl IntoView {
     view! {
         <div class=css::titleBlock>
-            <h1 class=css::title>{move || meta.get().title.clone()}</h1>
+            <div class=css::titleRow>
+                <h1 class=css::title>{move || meta.get().title.clone()}</h1>
+                <ReaderActionsMenu actions=actions />
+            </div>
             {move || {
                 let i = intent.get();
                 let m = meta.get();
                 let rows = rows_for(&i, &m);
+                let disabled = variants_disabled.get();
                 if rows.is_empty() {
                     None
                 } else {
                     Some(view! {
                         <MetaTable class=css::metaTable aria_label="file metadata">
-                            {rows.into_iter().map(render_row).collect_view()}
+                            {rows.into_iter()
+                                .map(|row| render_row(row, disabled, set_preferred_locale))
+                                .collect_view()}
                         </MetaTable>
                     })
                 }
@@ -165,7 +233,11 @@ pub fn TitleBlock(intent: Memo<ReaderIntent>, meta: Memo<ReaderMeta>) -> impl In
     }
 }
 
-fn render_row(spec: RowSpec) -> AnyView {
+fn render_row(
+    spec: RowSpec,
+    variants_disabled: bool,
+    set_preferred_locale: Callback<String>,
+) -> AnyView {
     match spec {
         RowSpec::Type { tag, hint } => view! {
             <MetaRow
@@ -214,6 +286,38 @@ fn render_row(spec: RowSpec) -> AnyView {
             </MetaRow>
         }
         .into_any(),
+        RowSpec::Links { items } => view! {
+            <MetaRow
+                label="Links"
+                row_class=css::metaRow
+                key_class=css::metaKey
+                value_class=css::metaValue
+            >
+                <span class=css::linkList>
+                    {items.into_iter().map(render_metadata_link).collect_view()}
+                </span>
+            </MetaRow>
+        }
+        .into_any(),
+        RowSpec::Variants { items } => view! {
+            <MetaRow
+                label="Variants"
+                row_class=css::metaRow
+                key_class=css::metaKey
+                value_class=css::metaValue
+            >
+                <span class=css::variantList>
+                    {items.into_iter()
+                        .map(|variant| render_variant_link(
+                            variant,
+                            variants_disabled,
+                            set_preferred_locale,
+                        ))
+                        .collect_view()}
+                </span>
+            </MetaRow>
+        }
+        .into_any(),
         RowSpec::Caption { text } => view! {
             <MetaRow
                 label="Caption"
@@ -226,6 +330,69 @@ fn render_row(spec: RowSpec) -> AnyView {
         }
         .into_any(),
     }
+}
+
+fn render_variant_link(
+    variant: ReaderVariantLink,
+    disabled: bool,
+    set_preferred_locale: Callback<String>,
+) -> AnyView {
+    if variant.active {
+        return view! {
+            <span class=format!("{} {}", css::variantChip, css::variantActive) aria-current="true">
+                {variant.label}
+            </span>
+        }
+        .into_any();
+    }
+    if disabled {
+        return view! {
+            <span class=format!("{} {}", css::variantChip, css::variantDisabled) aria-disabled="true">
+                {variant.label}
+            </span>
+        }
+        .into_any();
+    }
+    let locale = variant.locale.clone();
+    let persist_locale = move |_| {
+        if let Some(locale) = locale.clone() {
+            set_preferred_locale.run(locale);
+        }
+    };
+    view! {
+        <a class=css::variantChip href=variant.href on:click=persist_locale>
+            {variant.label}
+        </a>
+    }
+    .into_any()
+}
+
+fn render_metadata_link(link: LinkRef) -> AnyView {
+    let href = link.url.trim().to_string();
+    let label = link.label.trim().to_string();
+    if !is_safe_metadata_link(&href) {
+        return view! {
+            <span class=format!("{} {}", css::linkChip, css::linkDisabled) aria-disabled="true">
+                {label}
+            </span>
+        }
+        .into_any();
+    }
+
+    view! {
+        <a class=css::linkChip href=href target="_blank" rel="noopener noreferrer">
+            {label}
+        </a>
+    }
+    .into_any()
+}
+
+fn is_safe_metadata_link(url: &str) -> bool {
+    let url = url.trim_start().to_ascii_lowercase();
+    url.starts_with("https://")
+        || url.starts_with("http://")
+        || url.starts_with('/')
+        || url.starts_with('#')
 }
 
 #[cfg(all(test, target_arch = "wasm32"))]
@@ -248,6 +415,7 @@ mod tests {
             date: date.map(String::from),
             size_pretty: None,
             tags: vec![],
+            links: Vec::new(),
             description: String::new(),
             media_type_hint: Some("UTF-8 · CommonMark"),
             kind: websh_core::domain::NodeKind::Page,
@@ -255,6 +423,7 @@ mod tests {
             page_count: None,
             image_dimensions: None,
             word_count: None,
+            variants: Vec::new(),
         }
     }
 
@@ -339,6 +508,7 @@ mod tests {
             NodeKind::Redirect,
             NodeKind::Data,
             NodeKind::Directory,
+            NodeKind::Bundle,
         ] {
             assert!(!kind_label(kind).is_empty(), "label missing for {kind:?}");
         }

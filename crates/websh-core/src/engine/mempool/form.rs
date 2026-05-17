@@ -35,15 +35,25 @@ pub struct ComposeForm {
     pub body: String,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum ComposeError {
+    #[error("title is required")]
     TitleEmpty,
+    #[error("title contains reserved characters")]
     TitleHasReservedChars,
+    #[error(
+        "slug must start with an ASCII letter or number and contain only ASCII letters, numbers, or `-`"
+    )]
     SlugInvalid,
+    #[error("status is unknown")]
     StatusUnknown,
+    #[error("modified must be an ISO date")]
     ModifiedNotIso,
+    #[error("category is unknown")]
     CategoryUnknown,
+    #[error("priority is unknown")]
     PriorityUnknown,
+    #[error("tag contains reserved characters")]
     TagHasReservedChars,
 }
 

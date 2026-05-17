@@ -1,11 +1,14 @@
+use std::sync::Arc;
+
 use crate::app::AppContext;
 use crate::platform::redirect::{UrlValidation, validate_redirect_url};
 use crate::platform::{BrowserAssetUrl, object_url_for_bytes};
 use crate::render::{RenderedMarkdown, render_markdown, rendered_from_html, sanitize_html};
-use websh_core::domain::VirtualPath;
+use websh_core::domain::{FileType, VirtualPath};
 use websh_core::support::asset::data_url_for_bytes;
+use websh_core::support::media_type_for_path;
 
-use super::ReaderIntent;
+use super::{ReaderIntent, ReaderLoadError};
 
 #[derive(Clone)]
 pub(super) enum RendererContent {
@@ -25,15 +28,18 @@ pub(super) struct ReaderDocument {
 
 pub(super) async fn load_reader_document(
     ctx: AppContext,
-    path: VirtualPath,
     intent: ReaderIntent,
-) -> Result<ReaderDocument, String> {
+) -> Result<ReaderDocument, ReaderLoadError> {
+    let path = content_path_for_intent(&intent);
     let content = match intent {
         ReaderIntent::Markdown { .. } => {
             let markdown = ctx
                 .read_text(&path)
                 .await
-                .map_err(|error| error.to_string())?;
+                .map_err(|source| ReaderLoadError::Read {
+                    path: path.clone(),
+                    source,
+                })?;
             return Ok(ReaderDocument {
                 content: RendererContent::Markdown(render_markdown(&markdown)),
                 raw_source: Some(markdown),
@@ -43,14 +49,21 @@ pub(super) async fn load_reader_document(
             .read_text(&path)
             .await
             .map(|html| RendererContent::Html(rendered_from_html(sanitize_html(&html))))
-            .map_err(|error| error.to_string())?,
+            .map_err(|source| ReaderLoadError::Read {
+                path: path.clone(),
+                source,
+            })?,
         ReaderIntent::Plain { .. } => ctx
             .read_text(&path)
             .await
             .map(RendererContent::Text)
-            .map_err(|error| error.to_string())?,
+            .map_err(|source| ReaderLoadError::Read {
+                path: path.clone(),
+                source,
+            })?,
         ReaderIntent::Asset { media_type, .. } => load_asset(ctx, &path, media_type).await?,
         ReaderIntent::Redirect { .. } => load_redirect(ctx, &path).await?,
+        ReaderIntent::BundleVariant { .. } => load_bundle_variant(ctx, &path).await?,
     };
 
     Ok(ReaderDocument {
@@ -59,14 +72,66 @@ pub(super) async fn load_reader_document(
     })
 }
 
+fn content_path_for_intent(intent: &ReaderIntent) -> VirtualPath {
+    match intent {
+        ReaderIntent::Markdown { node_path }
+        | ReaderIntent::Html { node_path }
+        | ReaderIntent::Plain { node_path }
+        | ReaderIntent::Asset { node_path, .. }
+        | ReaderIntent::Redirect { node_path } => node_path.clone(),
+        ReaderIntent::BundleVariant { variant_path, .. } => variant_path.clone(),
+    }
+}
+
+async fn load_bundle_variant(
+    ctx: AppContext,
+    path: &VirtualPath,
+) -> Result<RendererContent, ReaderLoadError> {
+    match FileType::from_path(path.as_str()) {
+        FileType::Markdown => {
+            let markdown = ctx
+                .read_text(path)
+                .await
+                .map_err(|source| ReaderLoadError::Read {
+                    path: path.clone(),
+                    source,
+                })?;
+            Ok(RendererContent::Markdown(render_markdown(&markdown)))
+        }
+        FileType::Html => ctx
+            .read_text(path)
+            .await
+            .map(|html| RendererContent::Html(rendered_from_html(sanitize_html(&html))))
+            .map_err(|source| ReaderLoadError::Read {
+                path: path.clone(),
+                source,
+            }),
+        FileType::Pdf | FileType::Image => {
+            load_asset(ctx, path, media_type_for_path(path.as_str()).to_string()).await
+        }
+        FileType::Link => load_redirect(ctx, path).await,
+        FileType::Unknown => ctx
+            .read_text(path)
+            .await
+            .map(RendererContent::Text)
+            .map_err(|source| ReaderLoadError::Read {
+                path: path.clone(),
+                source,
+            }),
+    }
+}
+
 async fn load_asset(
     ctx: AppContext,
     path: &VirtualPath,
     media_type: String,
-) -> Result<RendererContent, String> {
+) -> Result<RendererContent, ReaderLoadError> {
     let public_url = ctx
         .public_read_url(path)
-        .map_err(|error| error.to_string())?;
+        .map_err(|source| ReaderLoadError::Read {
+            path: path.clone(),
+            source,
+        })?;
 
     if media_type == "application/pdf" {
         if let Some(url) = public_url
@@ -79,8 +144,15 @@ async fn load_asset(
         let bytes = ctx
             .read_bytes(path)
             .await
-            .map_err(|error| error.to_string())?;
-        let url = object_url_for_bytes(&bytes, &media_type)?;
+            .map_err(|source| ReaderLoadError::Read {
+                path: path.clone(),
+                source,
+            })?;
+        let url =
+            object_url_for_bytes(&bytes, &media_type).map_err(|source| ReaderLoadError::Asset {
+                path: path.clone(),
+                source,
+            })?;
         Ok(RendererContent::Pdf { url })
     } else {
         if let Some(url) = public_url.filter(|url| can_render_image_url(url)) {
@@ -89,7 +161,10 @@ async fn load_asset(
         let bytes = ctx
             .read_bytes(path)
             .await
-            .map_err(|error| error.to_string())?;
+            .map_err(|source| ReaderLoadError::Read {
+                path: path.clone(),
+                source,
+            })?;
         let url = data_url_for_bytes(&bytes, &media_type);
         Ok(RendererContent::Image { url })
     }
@@ -121,21 +196,29 @@ fn is_githubusercontent_url(url: &str) -> bool {
     host == "raw.githubusercontent.com" || host.ends_with(".githubusercontent.com")
 }
 
-async fn load_redirect(ctx: AppContext, path: &VirtualPath) -> Result<RendererContent, String> {
+async fn load_redirect(
+    ctx: AppContext,
+    path: &VirtualPath,
+) -> Result<RendererContent, ReaderLoadError> {
     let target = ctx
         .read_text(path)
         .await
-        .map_err(|error| error.to_string())?;
+        .map_err(|source| ReaderLoadError::Read {
+            path: path.clone(),
+            source,
+        })?;
     match validate_redirect_url(target.trim()) {
         UrlValidation::Valid(safe_url) => {
             if let Some(window) = web_sys::window()
                 && window.location().set_href(&safe_url).is_err()
             {
-                return Err("Failed to redirect".to_string());
+                return Err(ReaderLoadError::RedirectFailed);
             }
             Ok(RendererContent::Redirecting)
         }
-        UrlValidation::Invalid(error) => Err(format!("Redirect blocked: {error}")),
+        UrlValidation::Invalid(source) => Err(ReaderLoadError::RedirectBlocked {
+            source: Arc::new(source),
+        }),
     }
 }
 

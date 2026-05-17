@@ -29,6 +29,11 @@ pub enum ReaderIntent {
         node_path: VirtualPath,
         media_type: String,
     },
+    BundleVariant {
+        bundle_path: VirtualPath,
+        variant_id: String,
+        variant_path: VirtualPath,
+    },
     Redirect {
         node_path: VirtualPath,
     },
@@ -54,6 +59,15 @@ impl From<ReaderIntent> for RenderIntent {
             } => RenderIntent::Asset {
                 node_path,
                 media_type,
+            },
+            ReaderIntent::BundleVariant {
+                bundle_path,
+                variant_id,
+                variant_path,
+            } => RenderIntent::BundleVariant {
+                bundle_path,
+                variant_id,
+                variant_path,
             },
             ReaderIntent::Redirect { node_path } => RenderIntent::Redirect { node_path },
         }
@@ -91,6 +105,15 @@ impl TryFrom<RouteFrame> for ReaderFrame {
             } => ReaderIntent::Asset {
                 node_path: node_path.clone(),
                 media_type: media_type.clone(),
+            },
+            RenderIntent::BundleVariant {
+                ref bundle_path,
+                ref variant_id,
+                ref variant_path,
+            } => ReaderIntent::BundleVariant {
+                bundle_path: bundle_path.clone(),
+                variant_id: variant_id.clone(),
+                variant_path: variant_path.clone(),
             },
             RenderIntent::Redirect { ref node_path } => ReaderIntent::Redirect {
                 node_path: node_path.clone(),

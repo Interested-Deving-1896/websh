@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use anyhow::{Context, anyhow};
 use websh_core::attestation::artifact::{Attestation, message_sha256};
 use websh_core::crypto::eth::verify_personal_sign;
 use websh_site::ATTESTATIONS_PATH;
@@ -22,13 +23,14 @@ pub(super) fn pgp_import(
     artifact.validate_header()?;
     let subject = artifact
         .subject_for_route(&route)
-        .ok_or_else(|| format!("attestation subject not found for route {route}"))?
+        .ok_or_else(|| anyhow!("attestation subject not found for route {route}"))?
         .clone();
     subject.validate()?;
     let message = subject.canonical_message()?;
 
     let signature_path = resolve_path(root, &signature);
-    let signature_body = std::fs::read_to_string(&signature_path)?;
+    let signature_body = std::fs::read_to_string(&signature_path)
+        .with_context(|| format!("read {}", signature_path.display()))?;
     let fingerprint = verify_pgp_signature(root, &key, &signature_body, &message)?;
     let signer = signer.or_else(|| pgp_signer_from_key(root, &key).ok().flatten());
     let message_hash = message_sha256(&message);
@@ -67,7 +69,7 @@ pub(super) fn eth_import(
     artifact.validate_header()?;
     let subject = artifact
         .subject_for_route(&route)
-        .ok_or_else(|| format!("attestation subject not found for route {route}"))?
+        .ok_or_else(|| anyhow!("attestation subject not found for route {route}"))?
         .clone();
     subject.validate()?;
     let message = subject.canonical_message()?;

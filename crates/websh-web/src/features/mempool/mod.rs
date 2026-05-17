@@ -6,11 +6,13 @@
 
 mod commit;
 mod component;
+mod error;
 mod loader;
 mod model;
 
 pub use commit::save_raw;
 pub use component::Mempool;
+pub use error::MempoolSaveError;
 pub use loader::load_mempool_files;
 pub use model::{
     LedgerFilterShape, LoadedMempoolFile, MempoolEntry, MempoolModel, build_mempool_model,

@@ -1,5 +1,6 @@
 use serde::Deserialize;
 
+use websh_core::attestation::artifact::AttestationArtifact;
 use websh_core::domain::VirtualPath;
 use websh_core::filesystem::{GlobalFs, content_href_for_path};
 
@@ -74,6 +75,14 @@ pub(super) struct NowItem {
     pub(super) text: String,
 }
 
+#[derive(Clone, Debug, thiserror::Error)]
+pub(super) enum NowParseError {
+    #[error("parse now.toml: {message}")]
+    Toml { message: String },
+    #[error("now.toml must contain at least one item")]
+    Empty,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct RecentItem {
     pub(super) kind: String,
@@ -83,14 +92,19 @@ pub(super) struct RecentItem {
     pub(super) tag: String,
 }
 
-pub(super) fn homepage_issued_at() -> Option<String> {
+pub(super) fn site_last_revised_at() -> Option<String> {
     websh_site::attestation_artifact()
         .ok()
-        .and_then(|artifact| {
-            artifact
-                .subject_for_route("/")
-                .map(|subject| subject.issued_at().to_string())
-        })
+        .and_then(|artifact| latest_attestation_issued_at(&artifact))
+}
+
+fn latest_attestation_issued_at(artifact: &AttestationArtifact) -> Option<String> {
+    artifact
+        .subjects
+        .iter()
+        .map(|subject| subject.issued_at())
+        .max()
+        .map(str::to_string)
 }
 
 pub(super) fn current_homepage_date() -> String {
@@ -128,8 +142,10 @@ pub(super) fn compact_homepage_date(date: &str) -> String {
     }
 }
 
-pub(super) fn parse_now_toml(body: &str) -> Result<NowDocument, String> {
-    let mut doc: NowDocument = toml::from_str(body).map_err(|error| error.to_string())?;
+pub(super) fn parse_now_toml(body: &str) -> Result<NowDocument, NowParseError> {
+    let mut doc: NowDocument = toml::from_str(body).map_err(|error| NowParseError::Toml {
+        message: error.to_string(),
+    })?;
 
     doc.items = doc
         .items
@@ -143,7 +159,7 @@ pub(super) fn parse_now_toml(body: &str) -> Result<NowDocument, String> {
         .collect();
 
     if doc.items.is_empty() {
-        return Err("now.toml must contain at least one item".to_string());
+        return Err(NowParseError::Empty);
     }
 
     Ok(doc)
@@ -179,7 +195,14 @@ fn count_toc_entries(fs: &GlobalFs, root: &VirtualPath) -> usize {
                 return 0;
             }
             if entry.is_dir {
-                count_toc_entries(fs, &entry.path)
+                if fs
+                    .node_metadata(&entry.path)
+                    .is_some_and(|meta| meta.is_bundle())
+                {
+                    1
+                } else {
+                    count_toc_entries(fs, &entry.path)
+                }
             } else if toc_countable_file(&entry.path) {
                 1
             } else {
@@ -228,7 +251,14 @@ fn collect_recent_items(fs: &GlobalFs, path: &VirtualPath, out: &mut Vec<RecentI
 
     for entry in entries {
         if entry.is_dir {
-            collect_recent_items(fs, &entry.path, out);
+            if fs
+                .node_metadata(&entry.path)
+                .is_some_and(|meta| meta.is_bundle())
+            {
+                collect_recent_bundle(fs, &entry.path, out);
+            } else {
+                collect_recent_items(fs, &entry.path, out);
+            }
             continue;
         }
 
@@ -255,6 +285,35 @@ fn collect_recent_items(fs: &GlobalFs, path: &VirtualPath, out: &mut Vec<RecentI
             tag,
         });
     }
+}
+
+fn collect_recent_bundle(fs: &GlobalFs, path: &VirtualPath, out: &mut Vec<RecentItem>) {
+    let node_meta = fs.node_metadata(path);
+    let Some(date) = non_empty_text(node_meta.and_then(|meta| meta.date()).map(str::to_string))
+    else {
+        return;
+    };
+    let Some(kind) = category_label_for_path(path.as_str()) else {
+        return;
+    };
+    let fallback_title = path
+        .file_name()
+        .map(str::to_string)
+        .unwrap_or_else(|| path.as_str().trim_matches('/').to_string());
+    let title = non_empty_text(node_meta.and_then(|meta| meta.title()).map(str::to_string))
+        .unwrap_or(fallback_title);
+    let tag = node_meta
+        .and_then(|meta| meta.tags())
+        .and_then(first_tag)
+        .unwrap_or_default();
+
+    out.push(RecentItem {
+        kind,
+        date,
+        title,
+        href: content_href_for_path(path.as_str()),
+        tag,
+    });
 }
 
 fn non_empty_text(value: Option<String>) -> Option<String> {
@@ -325,8 +384,39 @@ text = "also ignored"
     }
 
     #[wasm_bindgen_test]
-    fn homepage_issued_at_uses_homepage_attestation_subject() {
-        assert!(homepage_issued_at().is_some());
+    fn site_last_revised_at_uses_latest_attestation_subject() {
+        let artifact: AttestationArtifact = serde_json::from_str(
+            r#"
+{
+  "version": 1,
+  "scheme": "websh.attestations.v1",
+  "subjects": [
+    {
+      "kind": "homepage",
+      "route": "/",
+      "issued_at": "2026-04-30",
+      "content_files": [],
+      "attestations": [],
+      "ack_combined_root": "0xack"
+    },
+    {
+      "kind": "page",
+      "route": "/writing/newer",
+      "issued_at": "2026-05-17",
+      "content_files": [],
+      "attestations": []
+    }
+  ]
+}
+"#,
+        )
+        .expect("valid artifact");
+
+        assert_eq!(
+            latest_attestation_issued_at(&artifact).as_deref(),
+            Some("2026-05-17")
+        );
+        assert!(site_last_revised_at().is_some());
     }
 
     #[wasm_bindgen_test]
@@ -337,6 +427,7 @@ text = "also ignored"
         let make_meta = |date: &str, tags: &[&str]| NodeMetadata {
             schema: SCHEMA_VERSION,
             kind: NodeKind::Page,
+            bundle: None,
             authored: Fields {
                 date: Some(date.to_string()),
                 tags: Some(tags.iter().map(|t| t.to_string()).collect()),
@@ -380,6 +471,7 @@ text = "also ignored"
         let blank = || NodeMetadata {
             schema: SCHEMA_VERSION,
             kind: NodeKind::Page,
+            bundle: None,
             authored: Fields::default(),
             derived: Fields::default(),
         };

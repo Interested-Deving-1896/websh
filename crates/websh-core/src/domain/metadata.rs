@@ -20,6 +20,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::bundle::BundleMetadata;
+
 pub const SCHEMA_VERSION: u32 = 1;
 
 /// Top-level metadata record for a node. Persisted as `<file>.meta.json`
@@ -28,12 +30,11 @@ pub const SCHEMA_VERSION: u32 = 1;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NodeMetadata {
-    #[serde(default = "default_schema")]
     pub schema: u32,
     pub kind: NodeKind,
-    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bundle: Option<BundleMetadata>,
     pub authored: Fields,
-    #[serde(default)]
     pub derived: Fields,
 }
 
@@ -42,14 +43,11 @@ impl Default for NodeMetadata {
         Self {
             schema: SCHEMA_VERSION,
             kind: NodeKind::Asset,
+            bundle: None,
             authored: Fields::default(),
             derived: Fields::default(),
         }
     }
-}
-
-fn default_schema() -> u32 {
-    SCHEMA_VERSION
 }
 
 /// Every metadata field the system understands. Both `authored` and
@@ -63,62 +61,76 @@ fn default_schema() -> u32 {
 #[serde(deny_unknown_fields)]
 pub struct Fields {
     // ── Identity / classification ──────────────────────────────────────
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<NodeKind>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub renderer: Option<RendererKind>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub route: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
 
     // ── Authoring / display ────────────────────────────────────────────
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub date: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tags: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub links: Option<Vec<LinkRef>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub thumbnail: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub sort: Option<String>,
 
     // ── Trust / access ─────────────────────────────────────────────────
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub trust: Option<TrustLevel>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub access: Option<AccessFilter>,
 
     // ── Document / PDF derived ─────────────────────────────────────────
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub page_size: Option<PageSize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub page_count: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rotation: Option<u32>,
 
     // ── Image derived ──────────────────────────────────────────────────
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub image_dimensions: Option<ImageDim>,
 
     // ── File integrity ─────────────────────────────────────────────────
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub size_bytes: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub modified_at: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub content_sha256: Option<String>,
 
     // ── Markdown derived ───────────────────────────────────────────────
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub word_count: Option<u32>,
 
     // ── Directory derived ──────────────────────────────────────────────
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub child_count: Option<u32>,
+}
+
+/// External or internal resource attached to a content node.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LinkRef {
+    pub label: String,
+    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
 }
 
 /// Generates `pub fn name(&self) -> Option<&str>` accessors for
@@ -182,6 +194,7 @@ resolve_str_accessors! {
     description,
     date,
     route,
+    language,
     icon,
     thumbnail,
     sort,
@@ -190,6 +203,7 @@ resolve_str_accessors! {
 
 resolve_slice_accessors! {
     tags -> String,
+    links -> LinkRef,
 }
 
 resolve_ref_accessors! {
@@ -215,7 +229,15 @@ impl NodeMetadata {
         self.tags().map(<[String]>::to_vec).unwrap_or_default()
     }
 
-    /// Effective node kind. Falls back from authored → derived → top-level.
+    /// Effective links as an owned `Vec<LinkRef>`. Returns an empty vec
+    /// when neither section has links.
+    pub fn links_owned(&self) -> Vec<LinkRef> {
+        self.links().map(<[LinkRef]>::to_vec).unwrap_or_default()
+    }
+
+    /// Effective display node kind. Falls back from authored → derived →
+    /// top-level. Structural filesystem decisions must use top-level
+    /// [`NodeMetadata::kind`] directly.
     pub fn effective_kind(&self) -> NodeKind {
         self.authored
             .kind
@@ -237,6 +259,11 @@ impl NodeMetadata {
     pub fn is_restricted(&self) -> bool {
         self.access().is_some()
     }
+
+    /// True iff this metadata describes a renderable content bundle.
+    pub fn is_bundle(&self) -> bool {
+        self.kind == NodeKind::Bundle
+    }
 }
 
 /// Semantic role of a node. Top-level field on [`NodeMetadata`] (not
@@ -253,6 +280,14 @@ pub enum NodeKind {
     Redirect,
     Data,
     Directory,
+    Bundle,
+}
+
+impl NodeKind {
+    /// Filesystem entries represented by [`FsEntry::Directory`].
+    pub fn is_directory_like(self) -> bool {
+        matches!(self, Self::Directory | Self::Bundle)
+    }
 }
 
 /// Renderer family the engine should instantiate. Optional override; the
@@ -322,6 +357,7 @@ pub(crate) mod test_support {
         NodeMetadata {
             schema: SCHEMA_VERSION,
             kind,
+            bundle: None,
             authored: Fields::default(),
             derived: Fields::default(),
         }
@@ -331,6 +367,7 @@ pub(crate) mod test_support {
         NodeMetadata {
             schema: SCHEMA_VERSION,
             kind: NodeKind::Directory,
+            bundle: None,
             authored: Fields {
                 title: Some(title.to_string()),
                 ..Fields::default()
@@ -343,13 +380,74 @@ pub(crate) mod test_support {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::BundleVariant;
 
     #[test]
     fn enums_round_trip_in_snake_case() {
         let kind = serde_json::to_string(&NodeKind::Page).unwrap();
+        let bundle = serde_json::to_string(&NodeKind::Bundle).unwrap();
         let renderer = serde_json::to_string(&RendererKind::HtmlPage).unwrap();
         assert_eq!(kind, "\"page\"");
+        assert_eq!(bundle, "\"bundle\"");
         assert_eq!(renderer, "\"html_page\"");
+    }
+
+    #[test]
+    fn bundle_metadata_round_trips() {
+        let meta = NodeMetadata {
+            schema: SCHEMA_VERSION,
+            kind: NodeKind::Bundle,
+            bundle: Some(BundleMetadata {
+                default_variant: "en".to_string(),
+                variants: vec![
+                    BundleVariant {
+                        id: "en".to_string(),
+                        path: "en.md".to_string(),
+                        label: "English".to_string(),
+                        locale: Some("en".to_string()),
+                        media_type: None,
+                    },
+                    BundleVariant {
+                        id: "print".to_string(),
+                        path: "print.pdf".to_string(),
+                        label: "PDF".to_string(),
+                        locale: None,
+                        media_type: Some("application/pdf".to_string()),
+                    },
+                ],
+            }),
+            authored: Fields {
+                title: Some("Bundle".to_string()),
+                ..Fields::default()
+            },
+            derived: Fields {
+                kind: Some(NodeKind::Bundle),
+                child_count: Some(2),
+                ..Fields::default()
+            },
+        };
+        let json = serde_json::to_string(&meta).unwrap();
+        let back: NodeMetadata = serde_json::from_str(&json).unwrap();
+        assert_eq!(meta, back);
+        assert!(back.is_bundle());
+        assert!(back.effective_kind().is_directory_like());
+    }
+
+    #[test]
+    fn bundle_identity_uses_top_level_kind_only() {
+        let meta = NodeMetadata {
+            schema: SCHEMA_VERSION,
+            kind: NodeKind::Directory,
+            bundle: None,
+            authored: Fields {
+                kind: Some(NodeKind::Bundle),
+                ..Fields::default()
+            },
+            derived: Fields::default(),
+        };
+
+        assert_eq!(meta.effective_kind(), NodeKind::Bundle);
+        assert!(!meta.is_bundle());
     }
 
     #[test]
@@ -357,6 +455,7 @@ mod tests {
         let meta = NodeMetadata {
             schema: SCHEMA_VERSION,
             kind: NodeKind::Page,
+            bundle: None,
             authored: Fields {
                 title: Some("Hello".to_string()),
                 ..Fields::default()
@@ -375,6 +474,7 @@ mod tests {
         let meta = NodeMetadata {
             schema: SCHEMA_VERSION,
             kind: NodeKind::Document,
+            bundle: None,
             authored: Fields {
                 title: Some("My Override".to_string()),
                 ..Fields::default()
@@ -394,6 +494,7 @@ mod tests {
         let meta = NodeMetadata {
             schema: SCHEMA_VERSION,
             kind: NodeKind::Document,
+            bundle: None,
             authored: Fields::default(),
             derived: Fields {
                 title: Some("derived-only".to_string()),
@@ -430,14 +531,32 @@ mod tests {
     }
 
     #[test]
+    fn requires_canonical_top_level_shape() {
+        for bad in [
+            r#"{"kind":"page","authored":{},"derived":{}}"#,
+            r#"{"schema":1,"kind":"page","derived":{}}"#,
+            r#"{"schema":1,"kind":"page","authored":{}}"#,
+        ] {
+            let parsed = serde_json::from_str::<NodeMetadata>(bad);
+            assert!(parsed.is_err(), "accepted non-canonical metadata: {bad}");
+        }
+    }
+
+    #[test]
     fn round_trip_full_metadata() {
         let meta = NodeMetadata {
             schema: SCHEMA_VERSION,
             kind: NodeKind::Document,
+            bundle: None,
             authored: Fields {
                 title: Some("Tabula Recta".to_string()),
                 date: Some("2024-09-12".to_string()),
                 tags: Some(vec!["paper".to_string(), "rust".to_string()]),
+                links: Some(vec![LinkRef {
+                    label: "Paper".to_string(),
+                    url: "https://eprint.iacr.org/2026/001".to_string(),
+                    kind: Some("paper".to_string()),
+                }]),
                 ..Fields::default()
             },
             derived: Fields {
@@ -457,6 +576,7 @@ mod tests {
         };
         let json = serde_json::to_string(&meta).unwrap();
         let back: NodeMetadata = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.links_owned()[0].label, "Paper");
         assert_eq!(meta, back);
     }
 }
