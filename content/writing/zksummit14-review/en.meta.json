@@ -7,8 +7,10 @@
     "description": "A program-level review of ZK Summit 14, covering talks, themes, and takeaways.",
     "date": "2026-05-18",
     "tags": [
-      "zk",
+      "review",
       "zksummit",
+      "zk",
+      "cryptography",
       "event"
     ]
   },
@@ -16,8 +18,8 @@
     "title": "en",
     "kind": "page",
     "renderer": "markdown_page",
-    "size_bytes": 22283,
-    "content_sha256": "0x4b9f2f0a0c0fb357fec9ed3efeba0525bf69c0f3bfc8cc06691ea710288cd5f6",
+    "size_bytes": 22305,
+    "content_sha256": "0x68ad5d572917f935bf22013be5b8500f325d8c7fc3ebb9270115ec67beaf3df9",
     "word_count": 3075
   }
 }

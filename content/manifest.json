@@ -131,9 +131,18 @@
           "description": "How programs become relations, constraints, traces, and proofs.",
           "date": "2026-05-15",
           "tags": [
+            "explainer",
             "zk",
             "compilers",
-            "systems"
+            "proof-systems",
+            "arithmetization"
+          ],
+          "links": [
+            {
+              "label": "Ethereum Collective Korea",
+              "url": "https://t.me/thetickeriseth/1402",
+              "kind": "telegram"
+            }
           ]
         },
         "derived": {
@@ -170,8 +179,10 @@
           "description": "A program-level review of ZK Summit 14, covering talks, themes, and takeaways.",
           "date": "2026-05-18",
           "tags": [
-            "zk",
+            "review",
             "zksummit",
+            "zk",
+            "cryptography",
             "event"
           ],
           "links": [
@@ -203,7 +214,7 @@
         "derived": {
           "title": "ledger",
           "kind": "data",
-          "size_bytes": 7161
+          "size_bytes": 7162
         }
       }
     },
@@ -264,10 +275,10 @@
           "description": "Slide deck — measuring how LLVM optimization passes interact with zkVM proving cost.",
           "date": "2026-04-24",
           "tags": [
-            "talk",
-            "zk",
+            "labseminar",
             "zkvm",
-            "compilers"
+            "compiler-optimizations",
+            "performance"
           ],
           "links": [
             {
@@ -303,17 +314,19 @@
           "description": "How programs become relations, constraints, traces, and proofs.",
           "date": "2026-05-15",
           "tags": [
+            "explainer",
             "zk",
             "compilers",
-            "systems"
+            "proof-systems",
+            "arithmetization"
           ]
         },
         "derived": {
           "title": "en",
           "kind": "page",
           "renderer": "markdown_page",
-          "size_bytes": 25377,
-          "content_sha256": "0xabdfb58f0df265ac3ac0c3b5be14e6c07d722e010dd3cfeea27fe151c4923c13",
+          "size_bytes": 25411,
+          "content_sha256": "0x028d827981ab38991e1ae77626fc08877460e775cffda6f01f9dceea90e9f610",
           "word_count": 3951
         }
       }
@@ -329,17 +342,19 @@
           "description": "프로그램이 relation, constraint, trace, proof가 되는 과정을 컴파일러 관점에서 설명합니다.",
           "date": "2026-05-15",
           "tags": [
+            "explainer",
             "zk",
             "compilers",
-            "systems"
+            "proof-systems",
+            "arithmetization"
           ]
         },
         "derived": {
           "title": "ko",
           "kind": "page",
           "renderer": "markdown_page",
-          "size_bytes": 30254,
-          "content_sha256": "0x116852b7db3d7ec74be639be9a1e9c4158d16e04068504bef8d70c9b803c7758",
+          "size_bytes": 30288,
+          "content_sha256": "0x68c65139572943632cec6a612c3f6db68d73f194ee626636d40ee726326a2709",
           "word_count": 3080
         }
       }
@@ -355,8 +370,10 @@
           "description": "A program-level review of ZK Summit 14, covering talks, themes, and takeaways.",
           "date": "2026-05-18",
           "tags": [
-            "zk",
+            "review",
             "zksummit",
+            "zk",
+            "cryptography",
             "event"
           ]
         },
@@ -364,8 +381,8 @@
           "title": "en",
           "kind": "page",
           "renderer": "markdown_page",
-          "size_bytes": 22283,
-          "content_sha256": "0x4b9f2f0a0c0fb357fec9ed3efeba0525bf69c0f3bfc8cc06691ea710288cd5f6",
+          "size_bytes": 22305,
+          "content_sha256": "0x68ad5d572917f935bf22013be5b8500f325d8c7fc3ebb9270115ec67beaf3df9",
           "word_count": 3075
         }
       }
@@ -381,8 +398,10 @@
           "description": "ZK Summit 14의 발표, 주요 주제, 시사점을 정리합니다.",
           "date": "2026-05-18",
           "tags": [
-            "zk",
+            "review",
             "zksummit",
+            "zk",
+            "cryptography",
             "event"
           ]
         },
@@ -390,8 +409,8 @@
           "title": "ko",
           "kind": "page",
           "renderer": "markdown_page",
-          "size_bytes": 24737,
-          "content_sha256": "0x7ed090d54a533d743a7b20fe4671184c1f9eba595581ec7574ef4f275abefc5d",
+          "size_bytes": 24759,
+          "content_sha256": "0x03c2ef4c5a3ee42674778e4e72ee340194f257cb22c1f05ac5dbcd1e234363ec",
           "word_count": 2528
         }
       }

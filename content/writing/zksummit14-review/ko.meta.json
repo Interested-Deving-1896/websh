@@ -7,8 +7,10 @@
     "description": "ZK Summit 14의 발표, 주요 주제, 시사점을 정리합니다.",
     "date": "2026-05-18",
     "tags": [
-      "zk",
+      "review",
       "zksummit",
+      "zk",
+      "cryptography",
       "event"
     ]
   },
@@ -16,8 +18,8 @@
     "title": "ko",
     "kind": "page",
     "renderer": "markdown_page",
-    "size_bytes": 24737,
-    "content_sha256": "0x7ed090d54a533d743a7b20fe4671184c1f9eba595581ec7574ef4f275abefc5d",
+    "size_bytes": 24759,
+    "content_sha256": "0x03c2ef4c5a3ee42674778e4e72ee340194f257cb22c1f05ac5dbcd1e234363ec",
     "word_count": 2528
   }
 }

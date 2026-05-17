@@ -7,17 +7,19 @@
     "description": "프로그램이 relation, constraint, trace, proof가 되는 과정을 컴파일러 관점에서 설명합니다.",
     "date": "2026-05-15",
     "tags": [
+      "explainer",
       "zk",
       "compilers",
-      "systems"
+      "proof-systems",
+      "arithmetization"
     ]
   },
   "derived": {
     "title": "ko",
     "kind": "page",
     "renderer": "markdown_page",
-    "size_bytes": 30254,
-    "content_sha256": "0x116852b7db3d7ec74be639be9a1e9c4158d16e04068504bef8d70c9b803c7758",
+    "size_bytes": 30288,
+    "content_sha256": "0x68c65139572943632cec6a612c3f6db68d73f194ee626636d40ee726326a2709",
     "word_count": 3080
   }
 }

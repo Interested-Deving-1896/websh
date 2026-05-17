@@ -7,17 +7,19 @@
     "description": "How programs become relations, constraints, traces, and proofs.",
     "date": "2026-05-15",
     "tags": [
+      "explainer",
       "zk",
       "compilers",
-      "systems"
+      "proof-systems",
+      "arithmetization"
     ]
   },
   "derived": {
     "title": "en",
     "kind": "page",
     "renderer": "markdown_page",
-    "size_bytes": 25377,
-    "content_sha256": "0xabdfb58f0df265ac3ac0c3b5be14e6c07d722e010dd3cfeea27fe151c4923c13",
+    "size_bytes": 25411,
+    "content_sha256": "0x028d827981ab38991e1ae77626fc08877460e775cffda6f01f9dceea90e9f610",
     "word_count": 3951
   }
 }

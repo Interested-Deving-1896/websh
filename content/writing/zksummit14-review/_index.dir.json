@@ -23,8 +23,10 @@
     "description": "A program-level review of ZK Summit 14, covering talks, themes, and takeaways.",
     "date": "2026-05-18",
     "tags": [
-      "zk",
+      "review",
       "zksummit",
+      "zk",
+      "cryptography",
       "event"
     ],
     "links": [

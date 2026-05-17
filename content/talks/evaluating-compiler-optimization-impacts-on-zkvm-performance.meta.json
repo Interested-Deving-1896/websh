@@ -6,10 +6,10 @@
     "description": "Slide deck — measuring how LLVM optimization passes interact with zkVM proving cost.",
     "date": "2026-04-24",
     "tags": [
-      "talk",
-      "zk",
+      "labseminar",
       "zkvm",
-      "compilers"
+      "compiler-optimizations",
+      "performance"
     ],
     "links": [
       {

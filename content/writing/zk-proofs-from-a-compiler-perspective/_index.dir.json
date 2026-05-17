@@ -23,9 +23,18 @@
     "description": "How programs become relations, constraints, traces, and proofs.",
     "date": "2026-05-15",
     "tags": [
+      "explainer",
       "zk",
       "compilers",
-      "systems"
+      "proof-systems",
+      "arithmetization"
+    ],
+    "links": [
+      {
+        "label": "Ethereum Collective Korea",
+        "url": "https://t.me/thetickeriseth/1402",
+        "kind": "telegram"
+      }
     ]
   },
   "derived": {
