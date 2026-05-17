@@ -180,10 +180,9 @@
           "date": "2026-05-18",
           "tags": [
             "review",
-            "zksummit",
             "zk",
-            "cryptography",
-            "event"
+            "event",
+            "cryptography"
           ],
           "links": [
             {
@@ -277,8 +276,10 @@
           "tags": [
             "labseminar",
             "zkvm",
-            "compiler-optimizations",
-            "performance"
+            "llvm",
+            "zk",
+            "compilers",
+            "optimizations"
           ],
           "links": [
             {
@@ -371,18 +372,17 @@
           "date": "2026-05-18",
           "tags": [
             "review",
-            "zksummit",
             "zk",
-            "cryptography",
-            "event"
+            "event",
+            "cryptography"
           ]
         },
         "derived": {
           "title": "en",
           "kind": "page",
           "renderer": "markdown_page",
-          "size_bytes": 22305,
-          "content_sha256": "0x68ad5d572917f935bf22013be5b8500f325d8c7fc3ebb9270115ec67beaf3df9",
+          "size_bytes": 22295,
+          "content_sha256": "0xa82324c9153458e811d378115e6654f12a2633abe69264ed2e4a8bbcc7b5603e",
           "word_count": 3075
         }
       }
@@ -399,18 +399,17 @@
           "date": "2026-05-18",
           "tags": [
             "review",
-            "zksummit",
             "zk",
-            "cryptography",
-            "event"
+            "event",
+            "cryptography"
           ]
         },
         "derived": {
           "title": "ko",
           "kind": "page",
           "renderer": "markdown_page",
-          "size_bytes": 24759,
-          "content_sha256": "0x03c2ef4c5a3ee42674778e4e72ee340194f257cb22c1f05ac5dbcd1e234363ec",
+          "size_bytes": 24749,
+          "content_sha256": "0xe8a0ccf4e32c78d95834240af9049bab2fff14567e669416f7836411c401aeff",
           "word_count": 2528
         }
       }

@@ -1,7 +1,7 @@
 ---
 title: "ZK Summit 14 Review: Talks, Themes, and Takeaways"
 date: "2026-05-18"
-tags: [review, zksummit, zk, cryptography, event]
+tags: [review, zk, event, cryptography]
 description: "A program-level review of ZK Summit 14, covering talks, themes, and takeaways."
 language: en
 ---

@@ -8,8 +8,10 @@
     "tags": [
       "labseminar",
       "zkvm",
-      "compiler-optimizations",
-      "performance"
+      "llvm",
+      "zk",
+      "compilers",
+      "optimizations"
     ],
     "links": [
       {

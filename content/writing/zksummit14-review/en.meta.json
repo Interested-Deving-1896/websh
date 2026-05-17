@@ -8,18 +8,17 @@
     "date": "2026-05-18",
     "tags": [
       "review",
-      "zksummit",
       "zk",
-      "cryptography",
-      "event"
+      "event",
+      "cryptography"
     ]
   },
   "derived": {
     "title": "en",
     "kind": "page",
     "renderer": "markdown_page",
-    "size_bytes": 22305,
-    "content_sha256": "0x68ad5d572917f935bf22013be5b8500f325d8c7fc3ebb9270115ec67beaf3df9",
+    "size_bytes": 22295,
+    "content_sha256": "0xa82324c9153458e811d378115e6654f12a2633abe69264ed2e4a8bbcc7b5603e",
     "word_count": 3075
   }
 }
