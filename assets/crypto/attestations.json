@@ -143,7 +143,7 @@
       "content_files": [
         {
           "path": "content/.websh/ledger.json",
-          "sha256": "0xd3591b000fd9eb7538b0cf2a85d67abf9176e74a43bdb914df201ebacf1dbb3f",
+          "sha256": "0x4e6ddb178155935755b226d7d596cf6ae329f58582f8a53c09669c97a3166442",
           "bytes": 7161
         }
       ],
@@ -153,28 +153,28 @@
           "signer": "Wonjae Choi <wonjae@snu.ac.kr>",
           "fingerprint": "6CA8E0E8E0F9B9EE2F92EE49BEE7501AEA7758AD",
           "key_path": "content/keys/wonjae.asc",
-          "signature": "-----BEGIN PGP SIGNATURE-----\n\niKMEABYKAEsWIQRsqODo4Pm57i+S7km+51Aa6ndYrQUCagpK8RsUgAAAAAAEAA5t\nYW51MiwyLjUrMS4xMiwwLDMRHHdvbmphZUBzbnUuYWMua3IACgkQvudQGup3WK2L\nBgEA0GASAi7571szNhkyy+/cH0y69soFJZyi9toYiyKiymcBAPWu4/9GO/b5aWZ3\nI7oDsIxyuy8+rR6xYq52MGhakKUD\n=7LwC\n-----END PGP SIGNATURE-----\n",
+          "signature": "-----BEGIN PGP SIGNATURE-----\n\niKMEABYKAEsWIQRsqODo4Pm57i+S7km+51Aa6ndYrQUCagpO5BsUgAAAAAAEAA5t\nYW51MiwyLjUrMS4xMiwwLDMRHHdvbmphZUBzbnUuYWMua3IACgkQvudQGup3WK3V\naQEAm9D479vgN1rQbAu7ZwFpZ/RrHKiUGXwPPRAOaXU0XNcBAOsAogUZAn7FOmzQ\njhLTZOD54XHMs+VHZgq8Ra8/cFoJ\n=tiFW\n-----END PGP SIGNATURE-----\n",
           "signature_path": ".websh/local/crypto/attestations/ledger.sig.asc",
-          "message_sha256": "0xb6266ecddf54d6d8e0e043bdae9acb37f42ab29a2343ea8eb6edb062874e9dae",
+          "message_sha256": "0x14c504c7a36eb8da2e55c21dcafbf6541ead8fe59f6bd3d6f7af3fe5cf814c4c",
           "verified": true
         }
       ],
-      "chain_head": "0x78e3b286a0d82ffea0af3fb6279e73d5eebe7fa86becb796ac990f73093871b3"
+      "chain_head": "0xfd48b941cecd446bfd104ec2172c08ee751c94a02b0d7daf8c8c9a84813bc034"
     },
     {
       "kind": "document",
       "route": "/now.toml",
-      "issued_at": "2026-04-30",
+      "issued_at": "2026-05-17",
       "content_files": [
         {
           "path": "content/now.meta.json",
-          "sha256": "0x228fd25c3a52d74c584e52eb706da715d3be779616e6f7e039c496dc28c42eee",
+          "sha256": "0x6fbbb81da5c971991d38f2bab2bb8a67839782bcbf8833e8d92816b2b3020668",
           "bytes": 339
         },
         {
           "path": "content/now.toml",
-          "sha256": "0x11e2367bdc46ec6dfc52c2a97a0e62425ca1953b35989fa861827b03b8022e37",
-          "bytes": 308
+          "sha256": "0x402f591372dc8f8a28265338f0a4ca7367656b5cac1000fd3f7adee608c4691a",
+          "bytes": 298
         }
       ],
       "attestations": [
@@ -183,9 +183,9 @@
           "signer": "Wonjae Choi <wonjae@snu.ac.kr>",
           "fingerprint": "6CA8E0E8E0F9B9EE2F92EE49BEE7501AEA7758AD",
           "key_path": "content/keys/wonjae.asc",
-          "signature": "-----BEGIN PGP SIGNATURE-----\n\niKMEABYKAEsWIQRsqODo4Pm57i+S7km+51Aa6ndYrQUCafVcyBsUgAAAAAAEAA5t\nYW51MiwyLjUrMS4xMiwwLDMRHHdvbmphZUBzbnUuYWMua3IACgkQvudQGup3WK2z\nvwD9HiiGqTrS6uKJL5TIxGZtkRS8PatxrfGSTJ9gb6eEzQAA/2pSQly6xpvI77w7\n69EZ7/oD7Y2cQFeqR6CBwC76l44N\n=CEZN\n-----END PGP SIGNATURE-----\n",
+          "signature": "-----BEGIN PGP SIGNATURE-----\n\niKMEABYKAEsWIQRsqODo4Pm57i+S7km+51Aa6ndYrQUCagpO5RsUgAAAAAAEAA5t\nYW51MiwyLjUrMS4xMiwwLDMRHHdvbmphZUBzbnUuYWMua3IACgkQvudQGup3WK2l\nPwEAqG9uH5iO7Qx571lGioLI0haURHn5F05aGlYAPEFIcmoA/3r9OOmZOVszmqh7\noh9gUm/DD7l3kKGNVGKrdOV5i24E\n=z65o\n-----END PGP SIGNATURE-----\n",
           "signature_path": ".websh/local/crypto/attestations/now-toml.sig.asc",
-          "message_sha256": "0x7654728bb1a66f051d96e4b16d292a19f96436d1aa21e473348283cbb2e69588",
+          "message_sha256": "0xd62bea388b728f42242264120d47f06fa1887d9e0f375b8ae300bbdef2b3f646",
           "verified": true
         }
       ]

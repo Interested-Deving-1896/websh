@@ -67,7 +67,7 @@
         "path": "now.toml"
       },
       "prev_block_sha256": "0xf7f3e1c3dec77bf34a321cdf808c0310fb81e8b0c33c5bfb061e24fcfea66dcf",
-      "block_sha256": "0xc055dbf24383d539bea8ef526368619587caea209c278c1a8fbde794967e42b8",
+      "block_sha256": "0x87ab7ef9327d92e301a09b1989cfed6c41b153bfa0d4e4622a251dfa540065a6",
       "entry": {
         "id": "route:/now.toml",
         "route": "/now.toml",
@@ -76,16 +76,16 @@
         "content_files": [
           {
             "path": "content/now.meta.json",
-            "sha256": "0x228fd25c3a52d74c584e52eb706da715d3be779616e6f7e039c496dc28c42eee",
+            "sha256": "0x6fbbb81da5c971991d38f2bab2bb8a67839782bcbf8833e8d92816b2b3020668",
             "bytes": 339
           },
           {
             "path": "content/now.toml",
-            "sha256": "0x11e2367bdc46ec6dfc52c2a97a0e62425ca1953b35989fa861827b03b8022e37",
-            "bytes": 308
+            "sha256": "0x402f591372dc8f8a28265338f0a4ca7367656b5cac1000fd3f7adee608c4691a",
+            "bytes": 298
           }
         ],
-        "content_sha256": "0xc8b5e62707c585993a2be663e42a4f2e0c677b51c6fe8ad6826513d0dd80dbbf"
+        "content_sha256": "0x48e0ed41faff000ae44b83b84822facbeaafa379c6800a1bcc583410e1b1ed33"
       }
     },
     {
@@ -94,8 +94,8 @@
         "date": "2026-05-15",
         "path": "writing/zk-proofs-from-a-compiler-perspective"
       },
-      "prev_block_sha256": "0xc055dbf24383d539bea8ef526368619587caea209c278c1a8fbde794967e42b8",
-      "block_sha256": "0x26daaf286e3e0707e882ef525a7c6cc2294eff5772a90e56c8770ac152433323",
+      "prev_block_sha256": "0x87ab7ef9327d92e301a09b1989cfed6c41b153bfa0d4e4622a251dfa540065a6",
+      "block_sha256": "0xa3ec042e6a112575397487762ff26b658084f41ebdb44961bb57a4ac02f08fa8",
       "entry": {
         "id": "route:/writing/zk-proofs-from-a-compiler-perspective",
         "route": "/writing/zk-proofs-from-a-compiler-perspective",
@@ -137,8 +137,8 @@
         "date": "2026-05-18",
         "path": "writing/zksummit14-review"
       },
-      "prev_block_sha256": "0x26daaf286e3e0707e882ef525a7c6cc2294eff5772a90e56c8770ac152433323",
-      "block_sha256": "0x78e3b286a0d82ffea0af3fb6279e73d5eebe7fa86becb796ac990f73093871b3",
+      "prev_block_sha256": "0xa3ec042e6a112575397487762ff26b658084f41ebdb44961bb57a4ac02f08fa8",
+      "block_sha256": "0xfd48b941cecd446bfd104ec2172c08ee751c94a02b0d7daf8c8c9a84813bc034",
       "entry": {
         "id": "route:/writing/zksummit14-review",
         "route": "/writing/zksummit14-review",
@@ -176,5 +176,5 @@
     }
   ],
   "block_count": 5,
-  "chain_head": "0x78e3b286a0d82ffea0af3fb6279e73d5eebe7fa86becb796ac990f73093871b3"
+  "chain_head": "0xfd48b941cecd446bfd104ec2172c08ee751c94a02b0d7daf8c8c9a84813bc034"
 }
